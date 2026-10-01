@@ -100,6 +100,68 @@ command = ["ollama", "run", "llama3.2"]          # the prompt is sent on standar
 
 The command receives the message and must print JSON: `{"days": ["2026-10-05"], "hours": "10:00-16:00", "minutes": 60}`. If it fails or prints something else, pattern matching is used. Nothing runs unless you configure it, and `--no-extract` skips it for one run. The message is sent to whatever that command talks to, so use a local model for private text.
 
+## Use it from an assistant or an agent
+
+The same answer is available to programs in three ways. All of them read only, return the same data, and leave event titles out unless asked.
+
+### As an MCP server
+
+`whenfree mcp` is a Model Context Protocol server on standard input and output, with no extra install.
+
+```bash
+claude mcp add when-free -- whenfree mcp                 # Claude Code
+```
+
+For Claude Desktop, Cursor and other MCP clients, add it to their server list:
+
+```json
+{
+  "mcpServers": {
+    "when-free": { "command": "whenfree", "args": ["mcp"] }
+  }
+}
+```
+
+Then ask in ordinary words: *"Here is the recruiter's message. Which of those times can I do?"* The assistant calls `free_slots` and answers from your real calendar.
+
+| Tool | What it does |
+|---|---|
+| `free_slots` | Free time ranges per day. Takes `days`, or `from` and `to`, or a `message` to read the days from; plus `hours`, `min_minutes`, `buffer_minutes`, `timezone`, `weekends`, `all_day_busy`, `include_busy` |
+| `check_calendars` | Whether each calendar can be read, with event counts. No details, no addresses |
+
+A tool that cannot do its job returns an error the assistant can read ("could not read the calendar 'work'"), never a guess.
+
+### From a function-calling harness
+
+If your harness registers tools from JSON schemas and runs commands, it needs two things:
+
+```bash
+whenfree schema                    # the tool definitions: name, description, inputSchema
+whenfree schema --format openai    # the same, as {"type": "function", "function": {...}}
+whenfree call free_slots --args '{"days": "2026-10-05, 2026-10-06", "hours": "10:00-16:00"}'
+```
+
+`whenfree call` prints one JSON object: `{"ok": true, "text": "...", "data": {...}}`, or `{"ok": false, "error": "..."}` with exit code 1. The arguments can also come on standard input.
+
+### From Python
+
+```python
+from whenfree import api
+
+result = api.find_free(api.Query(days="2026-10-05, 2026-10-06", hours="10:00-16:00", min_minutes=45))
+for day in result["days"]:
+    print(day["label"], day["free"])          # Mon 5 Oct [['10:00', '14:45']]
+```
+
+`find_free` returns plain dicts and lists, ready for `json.dumps`, and raises `api.Problem` with a message that is safe to show.
+
+### What an agent can and cannot see
+
+- **Free time: yes.** That is the point.
+- **Event titles: only on request.** `include_busy` is off by default, and its description tells the model that titles are private.
+- **Calendar addresses: never.** They are not in any tool result or error.
+- **Changing anything: no.** There is no tool that writes.
+
 ## What counts as busy
 
 | In your calendar | Blocks time? |
