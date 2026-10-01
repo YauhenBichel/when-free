@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.0 (2026-10-01)
+
+For assistants and agents. Nothing changes for the command line.
+
+- `whenfree mcp`: a Model Context Protocol server on standard input and output, standard library only,
+  with two read-only tools, `free_slots` and `check_calendars`.
+- `whenfree schema` prints the tool definitions (MCP shape or `--format openai`), and
+  `whenfree call NAME --args JSON` runs a tool from a shell with JSON in and JSON out.
+- `whenfree.api.find_free(Query(...))` is the one function behind the command line, the MCP server
+  and `call`. It returns plain data and raises `api.Problem` with a message that is safe to show.
+- Event titles are left out of tool results unless the caller asks with `include_busy`.
+
 ## 0.1.0 (2026-10-01)
 
 - `whenfree` prints the free slots for the next working days, a date range, or named days.

@@ -27,3 +27,5 @@ jobs:
           uvx --from dist/*.whl whenfree --help
           WHENFREE_NOW=2026-10-01T08:00:00 WHENFREE_TZ=Europe/London \
             uvx --from dist/*.whl whenfree --calendar tests/data/sample.ics --days "Wed 7 Oct" --hours 10:00-16:00
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            | uvx --from dist/*.whl whenfree mcp | grep -q '"free_slots"'

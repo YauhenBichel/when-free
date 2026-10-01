@@ -2,185 +2,48 @@
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import json
 import pathlib
 import sys
-import urllib.error
-import urllib.request
-from zoneinfo import ZoneInfo
 
-from . import __version__, config as settings, dates, extract, ical, slots
+from . import __version__, api, config as settings, mcp, tools
 
-COMMANDS = ("slots", "init", "check")
-DAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-SETUP_HINT = """No calendar is configured.
-
-  whenfree init          creates the settings file and tells you where it is
-  then paste your calendar's private iCal address into it
-
-Or try it once without a settings file:
-
-  whenfree --calendar https://calendar.google.com/calendar/ical/.../basic.ics
-  whenfree --calendar ~/Downloads/calendar.ics"""
-
-
-class Problem(Exception):
-    """Something the user can fix. Printed without a traceback."""
-
-
-def _read(source: str) -> str:
-    if source.startswith(("http://", "https://", "webcal://")):
-        url = "https://" + source[len("webcal://"):] if source.startswith("webcal://") else source
-        req = urllib.request.Request(url, headers={"User-Agent": f"when-free/{__version__}"})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return r.read().decode("utf-8", "replace")
-    return pathlib.Path(source).expanduser().read_text(encoding="utf-8", errors="replace")
-
-
-def _calendars(args, cfg: settings.Config) -> list[settings.Calendar]:
-    if getattr(args, "calendar", None):
-        return [settings.Calendar(f"calendar {i}", s) for i, s in enumerate(args.calendar, 1)]
-    return cfg.calendars
-
-
-def _load(calendars: list[settings.Calendar], tz) -> list[tuple[str, list[ical.Event]]]:
-    """Every calendar or none: a calendar that silently fails to load would make busy time look free."""
-    out = []
-    for cal in calendars:
-        try:
-            text = _read(cal.source)
-        except (OSError, urllib.error.URLError, ValueError) as e:
-            # The address is a secret; name the calendar, never print where it lives.
-            reason = getattr(e, "reason", None) or getattr(e, "strerror", None) or e.__class__.__name__
-            raise Problem(f"could not read the calendar '{cal.name}' ({reason}). No slots were printed, "
-                          "because without it busy time would look free.") from None
-        if "BEGIN:VCALENDAR" not in text:
-            raise Problem(f"the calendar '{cal.name}' did not return iCalendar data; check its address")
-        out.append((cal.name, ical.parse(text, tz)))
-    return out
-
-
-def _timezone(args, cfg: settings.Config):
-    name = getattr(args, "tz", None) or cfg.timezone or settings.system_timezone()
-    try:
-        return ZoneInfo(name)
-    except Exception:
-        raise Problem(f"unknown time zone {name!r}; use a name like Europe/London") from None
-
-
-def _working_days(start: dt.date, count: int, weekends: bool) -> list[dt.date]:
-    days, d = [], start
-    while len(days) < count:
-        if weekends or d.weekday() < 5:
-            days.append(d)
-        d += dt.timedelta(days=1)
-    return days
+COMMANDS = ("slots", "init", "check", "mcp", "schema", "call")
 
 
 def cmd_slots(args) -> int:
-    cfg = settings.load(args.config)
-    tz = _timezone(args, cfg)
-    now = settings.now(tz)
-    today = now.date()
-    min_minutes = args.min if args.min is not None else cfg.min_minutes
-    buffer_minutes = args.buffer if args.buffer is not None else cfg.buffer_minutes
-    weekends = args.weekends or cfg.weekends
-    hours = dates.hours_from_string(args.hours) if args.hours else None
-    how = None
-
+    message = None
     if args.message:
-        text = sys.stdin.read() if args.message == "-" else pathlib.Path(args.message).expanduser().read_text()
-        got = None
-        if cfg.extract_command and not args.no_extract:
-            got = extract.run(cfg.extract_command, text, today)
-        if got:
-            days, how = got["days"], "by your model"
-            if hours is None and got["hours"]:
-                try:
-                    hours = dates.hours_from_string(got["hours"])
-                except ValueError:
-                    pass
-            if args.min is None and got["minutes"]:
-                min_minutes = got["minutes"]
-        else:
-            days, how = dates.parse_days(text, today), "by pattern matching"
-            if hours is None:
-                hours = dates.parse_hours(text)
-        if not days:
-            raise Problem("found no dates in the message. Give them yourself: --days \"Thu 1 Oct, Fri 2 Oct\"")
-    elif args.days:
-        days = dates.parse_days(args.days, today)
-        if not days:
-            raise Problem(f"could not read any date from {args.days!r}. Examples: \"Thu 1 Oct, 5 Oct\" or 2026-10-05")
-    else:
-        try:
-            first = dt.date.fromisoformat(args.start) if args.start else today
-            last = dt.date.fromisoformat(args.end) if args.end else None
-        except ValueError:
-            raise Problem("--from and --to take dates like 2026-10-05") from None
-        if last is None:
-            days = _working_days(first, cfg.days_ahead, weekends)
-        else:
-            if last < first:
-                raise Problem("--to is before --from")
-            days = [first + dt.timedelta(days=i) for i in range((last - first).days + 1)]
-            days = [d for d in days if weekends or d.weekday() < 5]
-
-    past = [d for d in days if d < today]
-    days = [d for d in days if d >= today]
-    if not days:
-        raise Problem("every date asked for is already in the past")
-    opens, closes = hours or dates.hours_from_string(cfg.hours)
-
-    calendars = _calendars(args, cfg)
-    if not calendars:
-        raise Problem(SETUP_HINT)
-    window_start = dt.datetime.combine(min(days), dt.time.min, tz)
-    window_end = dt.datetime.combine(max(days) + dt.timedelta(days=1), dt.time.min, tz)
-    warnings: list[str] = []
-    busy: list[slots.Busy] = []
-    total_events = 0
-    for name, events in _load(calendars, tz):
-        total_events += len(events)
-        busy += slots.busy_blocks(events, window_start, window_end, me=cfg.me,
-                                  all_day_busy=args.all_day_busy or cfg.all_day_busy, calendar=name, warnings=warnings)
-    busy.sort(key=lambda b: (b.start, b.end))
-
-    clock = lambda t: t.strftime("%H:%M")
-    result = []
-    for d in days:
-        free = slots.free_slots(d, opens, closes, busy, tz, buffer_minutes=buffer_minutes,
-                                min_minutes=min_minutes, now=now if d == today else None)
-        day_start = dt.datetime.combine(d, dt.time.min, tz)
-        blocking = [b for b in busy if b.start < day_start + dt.timedelta(days=1) and b.end > day_start]
-        result.append((d, free, blocking))
+        message = sys.stdin.read() if args.message == "-" else pathlib.Path(args.message).expanduser().read_text()
+    result = api.find_free(api.Query(
+        days=args.days, start=args.start, end=args.end, message=message, hours=args.hours,
+        min_minutes=args.min, buffer_minutes=args.buffer, timezone=args.tz, weekends=args.weekends,
+        all_day_busy=args.all_day_busy, calendars=args.calendar, config_path=args.config,
+        use_extract=not args.no_extract))
 
     if args.format == "json":
-        print(json.dumps({
-            "timezone": tz.key, "hours": [clock(opens), clock(closes)], "min_minutes": min_minutes,
-            "buffer_minutes": buffer_minutes,
-            "days": [{"date": d.isoformat(), "free": [[clock(a), clock(b)] for a, b in free]} for d, free, _ in result],
-        }, indent=2))
+        days = [{k: v for k, v in day.items() if k in ("date", "free") or (k == "busy" and args.busy)}
+                for day in result["days"]]
+        print(json.dumps({"timezone": result["timezone"], "hours": result["hours"], "min_minutes": result["min_minutes"],
+                          "buffer_minutes": result["buffer_minutes"], "days": days}, indent=2, ensure_ascii=False))
     else:
         # The context goes to stderr so that `whenfree | pbcopy` copies only the lines you paste into a reply.
-        print(f"Free between {clock(opens)} and {clock(closes)} ({tz.key}), slots of {min_minutes}+ minutes, "
-              f"{buffer_minutes}-minute buffer around events:\n", file=sys.stderr)
-        for d, free, blocking in result:
-            label = f"{DAY[d.weekday()]} {d.day} {d.strftime('%b')}"
-            print(f"- {label}: " + (", ".join(f"{clock(a)}–{clock(b)}" for a, b in free) if free else "no free slot"))
-            if args.busy:
-                for b in blocking:
-                    where = f"  [{b.calendar}]" if len(calendars) > 1 else ""
-                    print(f"      busy {clock(b.start.astimezone(tz))}–{clock(b.end.astimezone(tz))}  {b.title or 'untitled'}{where}")
-    if how:
-        print(f"\nDates and hours were read from the message {how}. Check them against the message.", file=sys.stderr)
-    if past:
-        print(f"Left out, already past: {', '.join(f'{DAY[d.weekday()]} {d.day} {d:%b}' for d in past)}.", file=sys.stderr)
-    for w in warnings:
-        print(f"note: {w}", file=sys.stderr)
-    print(f"{total_events} events read from {len(calendars)} calendar(s); {len(busy)} block time on these days.", file=sys.stderr)
+        print(f"Free between {result['hours'][0]} and {result['hours'][1]} ({result['timezone']}), "
+              f"slots of {result['min_minutes']}+ minutes, {result['buffer_minutes']}-minute buffer around events:\n",
+              file=sys.stderr)
+        for line in api.lines(result, busy=args.busy):
+            print(line)
+    if result["read_by"]:
+        print(f"\nDates and hours were read from the message by {result['read_by']}. Check them against the message.",
+              file=sys.stderr)
+    if result["past"]:
+        import datetime as dt
+        gone = ", ".join(api.label(dt.date.fromisoformat(d)) for d in result["past"])
+        print(f"Left out, already past: {gone}.", file=sys.stderr)
+    for note in result["notes"]:
+        print(f"note: {note}", file=sys.stderr)
+    print(f"{result['events_read']} events read from {result['calendars']} calendar(s); "
+          f"{result['blocking']} block time on these days.", file=sys.stderr)
     return 0
 
 
@@ -195,17 +58,36 @@ def cmd_init(args) -> int:
 
 
 def cmd_check(args) -> int:
-    cfg = settings.load(args.config)
-    tz = _timezone(args, cfg)
-    calendars = _calendars(args, cfg)
-    if not calendars:
-        raise Problem(SETUP_HINT)
-    now = settings.now(tz)
-    horizon = now + dt.timedelta(days=14)
-    print(f"Settings: {cfg.path if cfg.path and cfg.path.exists() else 'none (defaults)'}   time zone: {tz.key}")
-    for name, events in _load(calendars, tz):
-        blocks = slots.busy_blocks(events, now, horizon, me=cfg.me, all_day_busy=cfg.all_day_busy)
-        print(f"  ok  {name}: {len(events)} events, {len(blocks)} block time in the next 14 days")
+    data = api.check_calendars(config_path=args.config, calendars=args.calendar, timezone=args.tz)
+    print(f"Settings: {data['settings'] or 'none (defaults)'}   time zone: {data['timezone']}")
+    for c in data["calendars"]:
+        print(f"  ok  {c['name']}: {c['events']} events, {c['blocking_next_14_days']} block time in the next 14 days")
+    return 0
+
+
+def cmd_mcp(args) -> int:
+    return mcp.serve(config_path=args.config)
+
+
+def cmd_schema(args) -> int:
+    print(json.dumps(tools.openai_schema() if args.format == "openai" else tools.TOOLS, indent=2, ensure_ascii=False))
+    return 0
+
+
+def cmd_call(args) -> int:
+    """Run one tool from a shell: JSON arguments in, JSON out. For harnesses that shell out instead of speaking MCP."""
+    raw = args.args if args.args is not None else ("" if sys.stdin.isatty() else sys.stdin.read())
+    try:
+        arguments = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError as e:
+        print(json.dumps({"ok": False, "error": f"the arguments are not JSON: {e.msg}"}))
+        return 1
+    try:
+        text, data = tools.call(args.tool, arguments, config_path=args.config)
+    except api.Problem as e:
+        print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+        return 1
+    print(json.dumps({"ok": True, "text": text, "data": data}, indent=2, ensure_ascii=False))
     return 0
 
 
@@ -229,9 +111,8 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--busy", action="store_true", help="also list what blocks each day, with titles")
     s.add_argument("--format", choices=("text", "json"), default="text")
     s.add_argument("--no-extract", action="store_true", help="do not run the [extract] command; read dates by pattern matching")
-    for x in (s,):
-        x.add_argument("--calendar", action="append", metavar="ADDRESS_OR_FILE", help="use this calendar instead of the configured ones; repeatable")
-        x.add_argument("--config", metavar="FILE", help="settings file (default: ~/.config/when-free/config.toml)")
+    s.add_argument("--calendar", action="append", metavar="ADDRESS_OR_FILE", help="use this calendar instead of the configured ones; repeatable")
+    s.add_argument("--config", metavar="FILE", help="settings file (default: ~/.config/when-free/config.toml)")
 
     i = sub.add_parser("init", help="create the settings file")
     i.add_argument("--config", metavar="FILE")
@@ -240,6 +121,19 @@ def _parser() -> argparse.ArgumentParser:
     c.add_argument("--calendar", action="append", metavar="ADDRESS_OR_FILE")
     c.add_argument("--config", metavar="FILE")
     c.add_argument("--tz", metavar="ZONE")
+
+    m = sub.add_parser("mcp", help="run as a Model Context Protocol server on standard input and output",
+                       description="An MCP server for assistants and agents. It offers two tools: free_slots and check_calendars.")
+    m.add_argument("--config", metavar="FILE")
+
+    sc = sub.add_parser("schema", help="print the tool definitions for a function-calling harness")
+    sc.add_argument("--format", choices=("mcp", "openai"), default="mcp", help="mcp: name, description, inputSchema. openai: type function, parameters")
+
+    ca = sub.add_parser("call", help="run one tool: JSON arguments in, JSON out",
+                        description="Run a tool from a shell. Example: whenfree call free_slots --args '{\"days\": \"2026-10-05\"}'")
+    ca.add_argument("tool", help="free_slots or check_calendars")
+    ca.add_argument("--args", metavar="JSON", help="the arguments as JSON; without it they are read from standard input")
+    ca.add_argument("--config", metavar="FILE")
     return p
 
 
@@ -248,9 +142,10 @@ def main(argv: list[str] | None = None) -> int:
     if not argv or (argv[0] not in COMMANDS and argv[0] not in ("-h", "--help", "--version")):
         argv = ["slots"] + argv
     args = _parser().parse_args(argv)
+    handlers = {"slots": cmd_slots, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp, "schema": cmd_schema, "call": cmd_call}
     try:
-        return {"slots": cmd_slots, "init": cmd_init, "check": cmd_check}[args.command](args)
-    except (Problem, settings.ConfigError, ValueError) as e:
+        return handlers[args.command](args)
+    except (api.Problem, settings.ConfigError, ValueError) as e:
         print(f"whenfree: {e}", file=sys.stderr)
         return 1
 
