@@ -35,11 +35,21 @@ pipx install git+https://github.com/YauhenBichel/when-free      # or: uv tool in
 
 ## Set up
 
-```bash
-whenfree init        # creates ~/.config/when-free/config.toml, readable only by you
+Copy the **private iCal address** of your calendar, then run:
+
+```console
+$ whenfree add
+Where the private address of a calendar is:
+  Google Calendar: Settings, your calendar, Integrate calendar, "Secret address in iCal format"
+  Outlook: Settings, Calendar, Shared calendars, Publish a calendar, the ICS link
+  iCloud: Calendar, the share icon next to the calendar, Public Calendar
+
+Paste the address and press Enter (it is not shown):
+Added 'personal': 412 events, 9 block time in the next 14 days.
+Saved in /Users/you/.config/when-free/config.toml, readable only by you. Now run: whenfree
 ```
 
-Open that file and paste the **private iCal address** of your calendar into the `url` line.
+It reads the calendar first and saves it only if that worked. The address is not shown as you paste it and is never printed afterwards. On macOS, `pbpaste | whenfree add` takes it straight from the clipboard.
 
 | Calendar | Where the address is |
 |---|---|
@@ -55,11 +65,23 @@ Do this in a browser. The phone app does not show the address.
 1. Open [Google Calendar settings](https://calendar.google.com/calendar/u/0/r/settings): the gear icon, then **Settings**.
 2. In the left column, under **Settings for my calendars**, click the calendar you want. The one with your own name is where invitations arrive.
 3. Scroll down to **Integrate calendar** and copy **Secret address in iCal format**. It ends in `basic.ics`. Do not take "Public address in iCal format": that one only works for a calendar you have made public.
-4. Paste it between the quotes of the `url` line in the settings file, so the line reads `url = "https://calendar.google.com/calendar/ical/.../basic.ics"`, and save.
+4. Run `whenfree add` and paste it when asked.
 
-Put the address in the file and nowhere else: not in a chat with an assistant, not in a shell command (`--calendar` with an address stays in your shell history), not in a repository.
+Give the address to `whenfree add` and to nothing else: not to a chat with an assistant, not to a shell command (`--calendar` with an address stays in your shell history), not to a repository.
 
-Then check that it can be read:
+### More calendars, and doing it by hand
+
+A slot is free only if it is free in every calendar you add.
+
+```bash
+whenfree add --name work                 # a second calendar: asks for its address
+whenfree add ~/calendars/family.ics      # an exported file instead of an address
+whenfree init                            # only creates the settings file, for you to edit
+```
+
+The settings file is `~/.config/when-free/config.toml`, with one `[[calendar]]` block per calendar: a `name`, and a `url` or a `path`. `whenfree add` writes those blocks and leaves the rest of the file as it is.
+
+At any time, check that every calendar can be read:
 
 ```console
 $ whenfree check
@@ -67,20 +89,19 @@ Settings: /Users/you/.config/when-free/config.toml   time zone: Europe/London
   ok  personal: 412 events, 9 block time in the next 14 days
 ```
 
-Add one `[[calendar]]` block per calendar. A slot is free only if it is free in all of them.
-
 ### If it does not work
 
 | What you see | What to do |
 |---|---|
-| `No calendar is configured` | The `url` line is still empty, or the file was not saved. The file is `~/.config/when-free/config.toml`, unless `WHENFREE_CONFIG` points somewhere else |
-| `could not read the calendar 'personal' (...)` | The address is incomplete or is not the secret one. Copy it again with the copy button, and keep the quotes around it |
-| `did not return iCalendar data; check its address` | The address is a web page, not a feed. It should end in `.ics` |
-| There is no "Secret address" in Google's settings | Work and school accounts can have it switched off by the administrator. Export the calendar instead (Settings → Import & export → Export), unzip it, and use `path = "~/calendars/work.ics"`. An export is a snapshot: export again when your calendar changes |
+| `No calendar is configured` | Run `whenfree add`. If you edited the file by hand, the `url` line is still empty or the file was not saved; the message names the file |
+| `could not read the calendar 'personal' (...)` | The address is incomplete or is not the secret one; the message says which when it can tell. Copy it again with the copy button |
+| `returned a web page, not a calendar` or `did not return iCalendar data` | The address is not a feed. It should end in `.ics` |
+| `Nothing was saved` | `whenfree add` could not read the calendar, so the settings file is unchanged. Fix the address and run it again |
+| There is no "Secret address" in Google's settings | Work and school accounts can have it switched off by the administrator. Export the calendar instead (Settings → Import & export → Export), unzip it, and run `whenfree add ~/calendars/work.ics`. An export is a snapshot: export again when your calendar changes |
 | An event you just added is missing | The feed is refreshed with a delay. See [Limits](#limits-stated-plainly) |
 | `whenfree check` is fine but a meeting does not block time | Run `whenfree --busy` to see what was read. An invitation you declined, an event marked Free and a whole-day event do not block; see [What counts as busy](#what-counts-as-busy) |
 
-**The address is a password.** Anyone who has it can read that calendar. `whenfree` never prints it, the settings file is created with owner-only permissions, and an error names the calendar, not its address. If the address leaks, reset it in your calendar's settings.
+**The address is a password.** Anyone who has it can read that calendar. `whenfree` never prints it, `whenfree add` does not show it as you paste, the settings file is readable only by you, and an error names the calendar, not its address. If the address leaks, reset it in your calendar's settings.
 
 ## Use
 
@@ -211,7 +232,7 @@ All optional except a calendar. Command-line flags win over the file.
 | `all_day_busy` | `false` | `--all-day-busy` | Whole-day events block the day |
 | `days_ahead` | `7` | | Working days shown when you give no dates |
 | `me` | `[]` | | Your addresses, so declined invitations do not block |
-| `[[calendar]]` | | `--calendar` | `name` and `url` or `path`. Repeat the block per calendar |
+| `[[calendar]]` | | `--calendar` | `name` and `url` or `path`. One block per calendar; `whenfree add` writes them |
 | `[extract] command` | none | `--no-extract` | A command that reads a message with your own model |
 
 Environment variables, for scripts and containers: `WHENFREE_CONFIG` (path to the settings file), `WHENFREE_CALENDARS` (comma-separated addresses or paths, replacing the file's list), `WHENFREE_TZ`.

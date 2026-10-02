@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+Setting up a calendar without editing a file.
+
+- `whenfree add` asks for a calendar's private address at a prompt that does not show it (or reads it from
+  standard input: `pbpaste | whenfree add`), reads the calendar, and saves it in the settings file only if
+  that worked. It creates the file if there is none, fills in the empty block of a new file, and adds later
+  calendars as new blocks; the rest of the file is left as it is. `whenfree add FILE` adds an exported file.
+- A calendar that cannot be read now says more when it can tell why: Google's public address given instead of
+  the secret one, an address that was refused and is probably incomplete, a web page instead of a feed.
+- "No calendar is configured" names the settings file when the file exists but holds no address, and points
+  to `whenfree add`.
+- The settings template and `whenfree init` no longer say to replace `webcal://` with `https://`; such an
+  address has always worked as it is.
+
 ## 0.2.0 (2026-10-01)
 
 For assistants and agents. Nothing changes for the command line.

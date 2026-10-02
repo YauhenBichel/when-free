@@ -24,13 +24,15 @@ DAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 SETUP_HINT = """No calendar is configured.
 
-  whenfree init          creates the settings file and tells you where it is
-  then paste your calendar's private iCal address into it
+  whenfree add           asks for your calendar's private iCal address, checks it and saves it
+  whenfree init          only creates the settings file, for you to edit
 
 Or try it once without a settings file:
 
-  whenfree --calendar https://calendar.google.com/calendar/ical/.../basic.ics
   whenfree --calendar ~/Downloads/calendar.ics"""
+
+URL = ("http://", "https://", "webcal://")
+NO_SLOTS = "No slots were printed, because without it busy time would look free."
 
 
 class Problem(Exception):
@@ -55,7 +57,7 @@ class Query:
 
 
 def _read(source: str) -> str:
-    if source.startswith(("http://", "https://", "webcal://")):
+    if source.startswith(URL):
         url = "https://" + source[len("webcal://"):] if source.startswith("webcal://") else source
         req = urllib.request.Request(url, headers={"User-Agent": f"when-free/{__version__}"})
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -69,7 +71,17 @@ def _calendars(given: list[str] | None, cfg: settings.Config) -> list[settings.C
     return cfg.calendars
 
 
-def _load(calendars: list[settings.Calendar], tz) -> list[tuple[str, list[ical.Event]]]:
+def _hint(source: str, error: Exception) -> str:
+    """What to try when an address is refused. It is built from the shape of the address and never quotes it."""
+    if not source.startswith(URL) or not isinstance(error, urllib.error.HTTPError) or not 400 <= error.code < 500:
+        return ""
+    if "calendar.google.com" in source and "/public/" in source:
+        return (" This is the calendar's public address, which works only for a calendar made public."
+                " Copy \"Secret address in iCal format\" instead.")
+    return " Copy the address again from the calendar's settings: part of it may be missing."
+
+
+def _load(calendars: list[settings.Calendar], tz, consequence: str = NO_SLOTS) -> list[tuple[str, list[ical.Event]]]:
     """Every calendar or none: a calendar that silently fails to load would make busy time look free."""
     out = []
     for cal in calendars:
@@ -78,9 +90,12 @@ def _load(calendars: list[settings.Calendar], tz) -> list[tuple[str, list[ical.E
         except (OSError, urllib.error.URLError, ValueError) as e:
             # The address is a secret; name the calendar, never print where it lives.
             reason = getattr(e, "reason", None) or getattr(e, "strerror", None) or e.__class__.__name__
-            raise Problem(f"could not read the calendar '{cal.name}' ({reason}). No slots were printed, "
-                          "because without it busy time would look free.") from None
+            raise Problem(f"could not read the calendar '{cal.name}' ({reason}). {consequence}"
+                          f"{_hint(cal.source, e)}") from None
         if "BEGIN:VCALENDAR" not in text:
+            if text.lstrip()[:200].lower().startswith(("<!doctype html", "<html")):
+                raise Problem(f"the calendar '{cal.name}' returned a web page, not a calendar; "
+                              "use the address that ends in .ics")
             raise Problem(f"the calendar '{cal.name}' did not return iCalendar data; check its address")
         out.append((cal.name, ical.parse(text, tz)))
     return out
@@ -170,7 +185,7 @@ def find_free(q: Query) -> dict:
 
     calendars = _calendars(q.calendars, cfg)
     if not calendars:
-        raise Problem(SETUP_HINT)
+        raise _no_calendar(cfg)
     window_start = dt.datetime.combine(min(days), dt.time.min, tz)
     window_end = dt.datetime.combine(max(days) + dt.timedelta(days=1), dt.time.min, tz)
     notes: list[str] = []
@@ -219,6 +234,18 @@ def lines(result: dict, busy: bool = False) -> list[str]:
     return out
 
 
+def _no_calendar(cfg: settings.Config) -> Problem:
+    if cfg.path and cfg.path.exists():       # the usual case: the file is there and its url line is still empty
+        return Problem(SETUP_HINT.replace("No calendar is configured.",
+                                          f"No calendar is configured: {cfg.path} has none with an address.", 1))
+    return Problem(SETUP_HINT)
+
+
+def _found(name: str, events: list[ical.Event], cfg: settings.Config, now: dt.datetime) -> dict:
+    blocks = slots.busy_blocks(events, now, now + dt.timedelta(days=14), me=cfg.me, all_day_busy=cfg.all_day_busy)
+    return {"name": name, "events": len(events), "blocking_next_14_days": len(blocks)}
+
+
 def check_calendars(config_path: str | None = None, calendars: list[str] | None = None,
                     timezone: str | None = None) -> dict:
     """Read every calendar and say what was found. Raises `Problem` if any cannot be read."""
@@ -229,11 +256,25 @@ def check_calendars(config_path: str | None = None, calendars: list[str] | None 
     tz = _timezone(timezone, cfg)
     cals = _calendars(calendars, cfg)
     if not cals:
-        raise Problem(SETUP_HINT)
+        raise _no_calendar(cfg)
     now = settings.now(tz)
-    horizon = now + dt.timedelta(days=14)
-    found = []
-    for name, events in _load(cals, tz):
-        blocks = slots.busy_blocks(events, now, horizon, me=cfg.me, all_day_busy=cfg.all_day_busy)
-        found.append({"name": name, "events": len(events), "blocking_next_14_days": len(blocks)})
+    found = [_found(name, events, cfg, now) for name, events in _load(cals, tz)]
     return {"settings": str(cfg.path) if cfg.path and cfg.path.exists() else None, "timezone": tz.key, "calendars": found}
+
+
+def add_calendar(source: str, name: str | None = None, config_path: str | None = None) -> dict:
+    """Read a calendar and, only if it can be read, save it in the settings file. For `whenfree add`.
+
+    It is not offered to agents as a tool: the address is a secret and should go from the person to the file.
+    """
+    try:
+        cfg = settings.load(config_path)
+    except settings.ConfigError as e:
+        raise Problem(str(e)) from None
+    tz = _timezone(None, cfg)
+    (_, events), = _load([settings.Calendar(name or "new", source)], tz, consequence="Nothing was saved.")
+    try:
+        path, name = settings.add_calendar(source, name, cfg.path)
+    except settings.ConfigError as e:
+        raise Problem(str(e)) from None
+    return {"settings": str(path), **_found(name, events, cfg, settings.now(tz))}
