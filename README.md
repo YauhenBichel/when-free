@@ -45,8 +45,19 @@ Open that file and paste the **private iCal address** of your calendar into the 
 |---|---|
 | Google Calendar | Settings → your calendar → Integrate calendar → **Secret address in iCal format** |
 | Outlook | Settings → Calendar → Shared calendars → Publish a calendar → the ICS link |
-| iCloud | Calendar → the share icon next to the calendar → Public Calendar. Replace `webcal://` with `https://` |
+| iCloud | Calendar → the share icon next to the calendar → Public Calendar. A `webcal://` address works as it is |
 | Anything else | Any `.ics` address, or a path to an exported `.ics` file |
+
+### Google Calendar, step by step
+
+Do this in a browser. The phone app does not show the address.
+
+1. Open [Google Calendar settings](https://calendar.google.com/calendar/u/0/r/settings): the gear icon, then **Settings**.
+2. In the left column, under **Settings for my calendars**, click the calendar you want. The one with your own name is where invitations arrive.
+3. Scroll down to **Integrate calendar** and copy **Secret address in iCal format**. It ends in `basic.ics`. Do not take "Public address in iCal format": that one only works for a calendar you have made public.
+4. Paste it between the quotes of the `url` line in the settings file, so the line reads `url = "https://calendar.google.com/calendar/ical/.../basic.ics"`, and save.
+
+Put the address in the file and nowhere else: not in a chat with an assistant, not in a shell command (`--calendar` with an address stays in your shell history), not in a repository.
 
 Then check that it can be read:
 
@@ -57,6 +68,17 @@ Settings: /Users/you/.config/when-free/config.toml   time zone: Europe/London
 ```
 
 Add one `[[calendar]]` block per calendar. A slot is free only if it is free in all of them.
+
+### If it does not work
+
+| What you see | What to do |
+|---|---|
+| `No calendar is configured` | The `url` line is still empty, or the file was not saved. The file is `~/.config/when-free/config.toml`, unless `WHENFREE_CONFIG` points somewhere else |
+| `could not read the calendar 'personal' (...)` | The address is incomplete or is not the secret one. Copy it again with the copy button, and keep the quotes around it |
+| `did not return iCalendar data; check its address` | The address is a web page, not a feed. It should end in `.ics` |
+| There is no "Secret address" in Google's settings | Work and school accounts can have it switched off by the administrator. Export the calendar instead (Settings → Import & export → Export), unzip it, and use `path = "~/calendars/work.ics"`. An export is a snapshot: export again when your calendar changes |
+| An event you just added is missing | The feed is refreshed with a delay. See [Limits](#limits-stated-plainly) |
+| `whenfree check` is fine but a meeting does not block time | Run `whenfree --busy` to see what was read. An invitation you declined, an event marked Free and a whole-day event do not block; see [What counts as busy](#what-counts-as-busy) |
 
 **The address is a password.** Anyone who has it can read that calendar. `whenfree` never prints it, the settings file is created with owner-only permissions, and an error names the calendar, not its address. If the address leaks, reset it in your calendar's settings.
 
