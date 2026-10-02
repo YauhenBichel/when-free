@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 import os
 import pathlib
+import re
 import tomllib
 from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
@@ -51,7 +53,8 @@ me = []                          # e.g. ["you@example.com"]
 # One block per calendar. Use the private iCal address of the calendar, or a path to an .ics file.
 #   Google Calendar: Settings -> your calendar -> Integrate calendar -> "Secret address in iCal format"
 #   Outlook:         Settings -> Calendar -> Shared calendars -> Publish a calendar -> ICS link
-#   iCloud:          Calendar -> share icon -> Public Calendar (replace webcal:// with https://)
+#   iCloud:          Calendar -> share icon -> Public Calendar
+# Or run `whenfree add`, which asks for the address, checks it and writes it here.
 [[calendar]]
 name = "personal"
 url = ""
@@ -143,6 +146,71 @@ def write_template(path: pathlib.Path | None = None) -> pathlib.Path:
     with os.fdopen(fd, "w") as f:
         f.write(TEMPLATE)
     return path
+
+
+def _quote(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _write_private(path: pathlib.Path, text: str) -> None:
+    """Replace the file in one step, readable only by its owner."""
+    path = pathlib.Path(os.path.realpath(path))          # a settings file that is a link stays a link
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(text)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, path)
+
+
+def add_calendar(source: str, name: str | None = None, path: pathlib.Path | None = None) -> tuple[pathlib.Path, str]:
+    """Save one calendar in the settings file, creating the file if there is none. Returns the file and the name used.
+
+    The file is edited as text, so comments and the other settings stay as they are. The empty `url = ""` block of a
+    new file is filled in; after that each calendar is a new [[calendar]] block at the end.
+    """
+    path = path or default_path()
+    text = path.read_text() if path.exists() else TEMPLATE
+    try:
+        before = tomllib.loads(text).get("calendar", [])
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(f"{path}: {e}") from None
+    taken = [str(c.get("name")) for c in before if c.get("url") or c.get("path")]
+    key = "url" if source.startswith(("http://", "https://", "webcal://")) else "path"
+
+    lines = text.splitlines()
+    empty = next((i for i, line in enumerate(lines) if re.fullmatch(r'\s*url\s*=\s*""\s*(#.*)?', line)), None)
+    head = None
+    if empty is not None:                 # only a [[calendar]] block may be filled in, not a url line of some other table
+        above = next((i for i in range(empty - 1, -1, -1) if lines[i].lstrip().startswith("[")), None)
+        head = above if above is not None and lines[above].strip() == "[[calendar]]" else None
+    if head is not None:
+        end = next((i for i in range(head + 1, len(lines)) if lines[i].lstrip().startswith("[")), len(lines))
+        block = lines[head + 1:end]
+        if any(re.match(r'\s*path\s*=\s*"[^"]', line) for line in block):
+            head = None                   # an empty url beside a path: that block is a calendar in use, leave it alone
+    if head is not None:
+        was = next((m.group(1) for m in (re.match(r'\s*name\s*=\s*"([^"]*)"', line) for line in block) if m), None)
+        name = name or (was if was not in taken else None)
+    if not name:
+        numbered = (f"calendar {i}" for i in itertools.count(len(taken) + 1))
+        name = next(n for n in itertools.chain(["personal"], numbered) if n not in taken)
+    if name in taken:
+        raise ConfigError(f"{path} already has a calendar named {name!r}; give this one another name with --name")
+
+    entry = [f"name = {_quote(name)}", f"{key} = {_quote(source)}"]
+    if head is not None:
+        lines[head + 1:end] = entry + [line for line in block if not re.match(r"\s*(name|url|path)\s*=", line)]
+    else:
+        lines += ["", "[[calendar]]"] + entry
+    text = "\n".join(lines) + "\n"
+
+    after = [c for c in tomllib.loads(text).get("calendar", []) if c.get("url") or c.get("path")]
+    if len(after) != len(taken) + 1 or not any(c.get("name") == name and c.get(key) == source for c in after):
+        raise ConfigError(f"could not add the calendar to {path}; add a [[calendar]] block with name and {key} by hand")
+    _write_private(path, text)
+    return path, name
 
 
 def now(tz: dt.tzinfo) -> dt.datetime:

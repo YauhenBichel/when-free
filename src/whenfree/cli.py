@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import getpass
 import json
+import os
 import pathlib
 import sys
 
 from . import __version__, api, config as settings, mcp, tools
 
-COMMANDS = ("slots", "init", "check", "mcp", "schema", "call")
+COMMANDS = ("slots", "add", "init", "check", "mcp", "schema", "call")
 
 
 def cmd_slots(args) -> int:
@@ -47,12 +49,41 @@ def cmd_slots(args) -> int:
     return 0
 
 
+WHERE = """Where the private address of a calendar is:
+  Google Calendar: Settings, your calendar, Integrate calendar, "Secret address in iCal format"
+  Outlook: Settings, Calendar, Shared calendars, Publish a calendar, the ICS link
+  iCloud: Calendar, the share icon next to the calendar, Public Calendar"""
+
+
+def cmd_add(args) -> int:
+    """Ask for one calendar, read it, and save it only if it could be read. The address is never shown."""
+    source = args.file
+    if source is None and sys.stdin.isatty():
+        print(WHERE + "\n", file=sys.stderr)
+        source = getpass.getpass("Paste the address and press Enter (it is not shown): ")
+    elif source is None:
+        source = sys.stdin.read()                    # pbpaste | whenfree add
+    elif source.startswith(api.URL):
+        print("note: an address given on the command line stays in your shell history. "
+              "Next time run `whenfree add` and paste it when asked.", file=sys.stderr)
+    source = source.strip().strip("\"'<>").strip()
+    if not source or any(ord(ch) < 32 for ch in source) or (source.startswith(api.URL) and " " in source):
+        raise api.Problem("that is not one address or one path. Copy the address again and paste only that.")
+    if not source.startswith(api.URL + ("~",)):
+        source = os.path.abspath(source)             # a file is found again whatever folder the next run starts in
+    found = api.add_calendar(source, name=args.name, config_path=args.config)
+    print(f"Added '{found['name']}': {found['events']} events, {found['blocking_next_14_days']} block time in the next 14 days.")
+    print(f"Saved in {found['settings']}, readable only by you. Now run: whenfree")
+    if os.environ.get("WHENFREE_CALENDARS"):
+        print("note: WHENFREE_CALENDARS is set and replaces the calendars in the settings file.", file=sys.stderr)
+    return 0
+
+
 def cmd_init(args) -> int:
     path = settings.write_template(pathlib.Path(args.config).expanduser() if args.config else None)
-    print(f"Created {path}\n\nOpen it and paste your calendar's private iCal address into the url line.\n"
-          "Where to find it:\n"
-          "  Google Calendar: Settings, your calendar, Integrate calendar, \"Secret address in iCal format\"\n"
-          "  Outlook: Settings, Calendar, Shared calendars, Publish a calendar, the ICS link\n\n"
+    print(f"Created {path}\n\nNow add a calendar:\n\n  whenfree add\n\n"
+          "It asks for your calendar's private iCal address, checks it and saves it in that file.\n"
+          "Or open the file and paste the address into the url line yourself.\n\n" + WHERE + "\n\n"
           "Then run: whenfree check")
     return 0
 
@@ -114,6 +145,14 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--calendar", action="append", metavar="ADDRESS_OR_FILE", help="use this calendar instead of the configured ones; repeatable")
     s.add_argument("--config", metavar="FILE", help="settings file (default: ~/.config/when-free/config.toml)")
 
+    a = sub.add_parser("add", help="add a calendar: asks for its address, checks it and saves it",
+                       description="Add a calendar to the settings file. Without FILE it asks for the calendar's private "
+                                   "address at a prompt that does not show it, or reads it from standard input: "
+                                   "pbpaste | whenfree add. Nothing is saved unless the calendar can be read.")
+    a.add_argument("file", nargs="?", metavar="FILE", help="an exported .ics file, instead of an address")
+    a.add_argument("--name", help="what to call it in messages (default: personal, then calendar 2, calendar 3)")
+    a.add_argument("--config", metavar="FILE", help="settings file (default: ~/.config/when-free/config.toml)")
+
     i = sub.add_parser("init", help="create the settings file")
     i.add_argument("--config", metavar="FILE")
 
@@ -142,7 +181,7 @@ def main(argv: list[str] | None = None) -> int:
     if not argv or (argv[0] not in COMMANDS and argv[0] not in ("-h", "--help", "--version")):
         argv = ["slots"] + argv
     args = _parser().parse_args(argv)
-    handlers = {"slots": cmd_slots, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp, "schema": cmd_schema, "call": cmd_call}
+    handlers = {"slots": cmd_slots, "add": cmd_add, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp, "schema": cmd_schema, "call": cmd_call}
     try:
         return handlers[args.command](args)
     except (api.Problem, settings.ConfigError, ValueError) as e:
