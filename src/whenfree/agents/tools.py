@@ -14,7 +14,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from . import api, render
+from .. import api
+from ..core import render
 
 _FREE_SLOTS = {
     "name": "free_slots",

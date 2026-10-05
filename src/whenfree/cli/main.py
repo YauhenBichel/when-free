@@ -8,8 +8,12 @@ import os
 import pathlib
 import sys
 
-from . import __version__, api, demo, mcp, render, server, sources, tools
-from . import config as settings
+from .. import __version__, api, settings
+from ..agents import mcp, tools
+from ..calendars import sources
+from ..core import render
+from ..web import server
+from . import demo
 
 
 def cmd_slots(args) -> int:

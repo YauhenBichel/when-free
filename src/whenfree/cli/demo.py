@@ -9,7 +9,8 @@ import datetime as dt
 import os
 from zoneinfo import ZoneInfo
 
-from . import api, config as settings, render
+from .. import api, settings
+from ..core import render
 
 MESSAGE = ("Hi! Thanks for applying. Could you share a few times on Tuesday, Wednesday or Thursday next week,\n"
            "between 10am and 4pm? The interview takes about an hour.")

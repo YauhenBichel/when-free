@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from whenfree import ical
+from whenfree.core import ical
 
 LONDON = ZoneInfo("Europe/London")
 SAMPLE = (pathlib.Path(__file__).parent / "data" / "sample.ics").read_text()

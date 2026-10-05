@@ -10,7 +10,8 @@ from __future__ import annotations
 import json
 import sys
 
-from . import __version__, api, tools
+from .. import __version__, api
+from . import tools
 
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")       # newest first
 

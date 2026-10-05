@@ -9,7 +9,8 @@ import urllib.request
 
 import pytest
 
-from whenfree import server, tools
+from whenfree.agents import tools
+from whenfree.web import server
 
 SAMPLE = str(pathlib.Path(__file__).parent / "data" / "sample.ics")
 TOKEN = "test-token"

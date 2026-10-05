@@ -19,11 +19,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
 
-from . import config as settings
-from . import dates, extract, ical, slots, sources
-from .errors import Problem
-from .render import label, lines  # noqa: F401  (kept here for existing callers)
-from .sources import NO_SLOTS, URL  # noqa: F401
+from . import settings
+from .calendars import sources
+from .calendars.sources import NO_SLOTS, URL  # noqa: F401
+from .core import ical, slots
+from .core.errors import Problem
+from .core.render import label, lines  # noqa: F401  (kept here for existing callers)
+from .messages import dates, extract
 
 SETUP_HINT = """No calendar is configured.
 

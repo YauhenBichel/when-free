@@ -318,17 +318,20 @@ A slot shorter than `min_minutes` after the buffers isn't offered. For today, th
 uv run --with pytest pytest -q        # a few seconds; no network
 ```
 
-The tests use a small calendar in `tests/data/sample.ics` and a fixed clock (`WHENFREE_NOW`). The code is laid out as:
+The tests use a small calendar in `tests/data/sample.ics` and a fixed clock (`WHENFREE_NOW`). The code is grouped by component:
 
-| Module | Job |
-|---|---|
-| `api` | `find_free`: plan the query, choose the days, read busy time, work out each day |
-| `dates` | Read days and hours out of text |
-| `sources` | Read calendars from an address or a file |
-| `ical`, `slots` | Parse events, expand repeats, turn busy time into free slots |
-| `render` | Word the answer, the same way for every front end |
-| `tools` | The tools offered to agents: one registry entry each |
-| `cli`, `mcp`, `server`, `demo` | The front ends |
+| Component | Holds | May use |
+|---|---|---|
+| `core/` | `ical`, `slots`, `render`, `errors`: events, busy time, free slots, the wording of an answer. No input or output | nothing |
+| `messages/` | `dates`, `extract`: days and hours read out of a message | `core` |
+| `settings/` | `config`: the settings file and environment variables | nothing |
+| `calendars/` | `sources`: calendars fetched from an address or read from a file | `core`, `settings` |
+| `api.py` | `find_free`, `check_calendars`: the one entry point for every front end | the four above |
+| `agents/` | `tools`, `mcp`: the tools offered to AI agents, and the MCP server | `api`, `core` |
+| `web/` | `server`: the HTTP front end | `api`, `agents`, `core`, `settings` |
+| `cli/` | `main`, `demo`: the `whenfree` command | anything |
+
+`tests/test_structure.py` fails if a component imports one it may not, so the domain stays free of front ends.
 
 See [CONTRIBUTING.md](https://github.com/YauhenBichel/when-free/blob/main/CONTRIBUTING.md).
 

@@ -5,7 +5,8 @@ import pathlib
 
 import pytest
 
-from whenfree import api, cli, mcp, tools
+from whenfree import api, cli
+from whenfree.agents import mcp, tools
 
 SAMPLE = str(pathlib.Path(__file__).parent / "data" / "sample.ics")
 
