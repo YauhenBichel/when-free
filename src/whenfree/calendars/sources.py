@@ -12,9 +12,10 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 
-from . import __version__, ical
-from .config import Calendar
-from .errors import Problem
+from .. import __version__
+from ..core import ical
+from ..core.errors import Problem
+from ..settings import Calendar
 
 URL = ("http://", "https://", "webcal://")
 NO_SLOTS = "No slots were printed, because without it busy time would look free."

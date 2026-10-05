@@ -3,7 +3,7 @@ import tomllib
 
 import pytest
 
-from whenfree import config
+from whenfree import settings as config
 
 
 def test_defaults_when_there_is_no_file(tmp_path, monkeypatch):

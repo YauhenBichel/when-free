@@ -3,7 +3,9 @@ import pathlib
 
 import pytest
 
-from whenfree import api, render, tools
+from whenfree import api
+from whenfree.agents import tools
+from whenfree.core import render
 
 SAMPLE = (pathlib.Path(__file__).parent / "data" / "sample.ics").read_text()
 
@@ -66,3 +68,49 @@ def test_the_demo_needs_no_calendar_and_no_settings(capsys, monkeypatch):
     assert "Lunch with Sam" in out and "whenfree add" in out
     days = [line for line in out.splitlines() if line.startswith("  - ")]
     assert [d.split(":")[0].split()[1] for d in days] == ["Tue", "Wed", "Thu"]
+
+
+# Which components each one may import. The domain depends on nothing; front ends depend on the rest, never
+# the other way round.
+ALLOWED = {
+    "core": set(),
+    "messages": {"core"},
+    "settings": set(),
+    "calendars": {"core", "settings"},
+    "api": {"core", "messages", "calendars", "settings"},
+    "agents": {"api", "core"},
+    "web": {"api", "agents", "core", "settings"},
+    "cli": {"api", "agents", "web", "core", "messages", "calendars", "settings"},
+}
+
+
+def _component(path):
+    parts = path.relative_to(PACKAGE).parts
+    return parts[0].removesuffix(".py") if len(parts) > 1 or parts[0] == "api.py" else None
+
+
+def _imported_components(path):
+    import ast
+    tree = ast.parse(path.read_text())
+    here = path.relative_to(PACKAGE).parts[:-1]
+    found = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.level:
+            base = list(here[: len(here) - (node.level - 1)]) if node.level > 1 else list(here)
+            target = base + (node.module.split(".") if node.module else [])
+            names = [target[0]] if target else [a.name for a in node.names]
+            found |= {n.removesuffix(".py") for n in names}
+        elif isinstance(node, ast.ImportFrom) and (node.module or "").startswith("whenfree."):
+            found.add(node.module.split(".")[1])
+    return found & set(ALLOWED)
+
+
+PACKAGE = pathlib.Path(__file__).parent.parent / "src" / "whenfree"
+
+
+@pytest.mark.parametrize("path", sorted(PACKAGE.rglob("*.py")), ids=lambda p: str(p.relative_to(PACKAGE)))
+def test_components_depend_only_on_what_they_may(path):
+    me = _component(path)
+    if me is None:
+        return                                     # __init__.py, __main__.py at the top
+    assert _imported_components(path) - ALLOWED[me] - {me} == set()

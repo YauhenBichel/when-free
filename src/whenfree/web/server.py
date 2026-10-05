@@ -22,8 +22,8 @@ import sys
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import __version__, api, tools
-from . import config as settings
+from .. import __version__, api, settings
+from ..agents import tools
 
 PORT = 8765
 MAX_BODY = 64 * 1024

@@ -24,6 +24,6 @@ def test_the_registry_can_verify_the_pypi_package():
 
 
 def test_the_extension_offers_the_same_tools():
-    from whenfree import tools
+    from whenfree.agents import tools
     manifest = json.loads((ROOT / "packaging/mcpb/manifest.json").read_text())
     assert [t["name"] for t in manifest["tools"]] == [t["name"] for t in tools.TOOLS]

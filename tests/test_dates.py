@@ -2,7 +2,7 @@ import datetime as dt
 
 import pytest
 
-from whenfree import dates
+from whenfree.messages import dates
 
 TODAY = dt.date(2026, 10, 1)      # a Thursday
 D = lambda m, d: dt.date(2026, m, d)

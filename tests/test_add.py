@@ -6,7 +6,9 @@ import urllib.error
 
 import pytest
 
-from whenfree import api, cli, config, sources
+from whenfree import cli
+from whenfree import settings as config
+from whenfree.calendars import sources
 
 SAMPLE = str(pathlib.Path(__file__).parent / "data" / "sample.ics")
 SECRET = "https://calendar.google.com/calendar/ical/me%40example.com/private-SECRET-TOKEN/basic.ics"

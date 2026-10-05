@@ -2,7 +2,7 @@ import datetime as dt
 import pathlib
 from zoneinfo import ZoneInfo
 
-from whenfree import ical, slots
+from whenfree.core import ical, slots
 
 LONDON = ZoneInfo("Europe/London")
 EVENTS = ical.parse((pathlib.Path(__file__).parent / "data" / "sample.ics").read_text(), LONDON)

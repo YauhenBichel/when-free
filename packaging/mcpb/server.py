@@ -11,6 +11,6 @@ for name in ("WHENFREE_CALENDARS", "WHENFREE_TZ"):
     if os.environ.get(name, "").strip().startswith("${") or not os.environ.get(name, "").strip():
         os.environ.pop(name, None)
 
-from whenfree import mcp  # noqa: E402
+from whenfree.agents import mcp  # noqa: E402
 
 sys.exit(mcp.serve())
