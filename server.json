@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.YauhenBichel/when-free",
+  "title": "when-free",
+  "description": "Which days and times am I free? Reads your calendar feeds and answers with the slots you can offer.",
+  "websiteUrl": "https://github.com/YauhenBichel/when-free#readme",
+  "repository": {
+    "url": "https://github.com/YauhenBichel/when-free",
+    "source": "github"
+  },
+  "version": "0.3.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "when-free",
+      "version": "0.3.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "WHENFREE_CALENDARS",
+          "description": "Private iCal addresses of your calendars, comma-separated. Optional if you saved them with `whenfree add`.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "WHENFREE_TZ",
+          "description": "Time zone for answers, like Europe/London. Default: the computer's.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}

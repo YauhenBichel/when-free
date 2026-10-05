@@ -8,9 +8,8 @@ import os
 import pathlib
 import sys
 
-from . import __version__, api, config as settings, mcp, tools
-
-COMMANDS = ("slots", "add", "init", "check", "mcp", "schema", "call")
+from . import __version__, api, demo, mcp, render, server, sources, tools
+from . import config as settings
 
 
 def cmd_slots(args) -> int:
@@ -30,20 +29,12 @@ def cmd_slots(args) -> int:
                           "buffer_minutes": result["buffer_minutes"], "days": days}, indent=2, ensure_ascii=False))
     else:
         # The context goes to stderr so that `whenfree | pbcopy` copies only the lines you paste into a reply.
-        print(f"Free between {result['hours'][0]} and {result['hours'][1]} ({result['timezone']}), "
-              f"slots of {result['min_minutes']}+ minutes, {result['buffer_minutes']}-minute buffer around events:\n",
-              file=sys.stderr)
-        for line in api.lines(result, busy=args.busy):
+        print(render.header(result) + "\n", file=sys.stderr)
+        for line in render.lines(result, busy=args.busy):
             print(line)
-    if result["read_by"]:
-        print(f"\nDates and hours were read from the message by {result['read_by']}. Check them against the message.",
-              file=sys.stderr)
-    if result["past"]:
-        import datetime as dt
-        gone = ", ".join(api.label(dt.date.fromisoformat(d)) for d in result["past"])
-        print(f"Left out, already past: {gone}.", file=sys.stderr)
-    for note in result["notes"]:
-        print(f"note: {note}", file=sys.stderr)
+    notes = render.notes(result, past_as_labels=True)
+    if notes:
+        print("\n" + "\n".join(notes), file=sys.stderr)
     print(f"{result['events_read']} events read from {result['calendars']} calendar(s); "
           f"{result['blocking']} block time on these days.", file=sys.stderr)
     return 0
@@ -63,13 +54,13 @@ def cmd_add(args) -> int:
         source = getpass.getpass("Paste the address and press Enter (it is not shown): ")
     elif source is None:
         source = sys.stdin.read()                    # pbpaste | whenfree add
-    elif source.startswith(api.URL):
+    elif sources.is_address(source):
         print("note: an address given on the command line stays in your shell history. "
               "Next time run `whenfree add` and paste it when asked.", file=sys.stderr)
     source = source.strip().strip("\"'<>").strip()
-    if not source or any(ord(ch) < 32 for ch in source) or (source.startswith(api.URL) and " " in source):
+    if not source or any(ord(ch) < 32 for ch in source) or (sources.is_address(source) and " " in source):
         raise api.Problem("that is not one address or one path. Copy the address again and paste only that.")
-    if not source.startswith(api.URL + ("~",)):
+    if not (sources.is_address(source) or source.startswith("~")):
         source = os.path.abspath(source)             # a file is found again whatever folder the next run starts in
     found = api.add_calendar(source, name=args.name, config_path=args.config)
     print(f"Added '{found['name']}': {found['events']} events, {found['blocking_next_14_days']} block time in the next 14 days.")
@@ -91,13 +82,22 @@ def cmd_init(args) -> int:
 def cmd_check(args) -> int:
     data = api.check_calendars(config_path=args.config, calendars=args.calendar, timezone=args.tz)
     print(f"Settings: {data['settings'] or 'none (defaults)'}   time zone: {data['timezone']}")
-    for c in data["calendars"]:
-        print(f"  ok  {c['name']}: {c['events']} events, {c['blocking_next_14_days']} block time in the next 14 days")
+    for line in render.calendars_checked(data):
+        print("  " + line)
+    return 0
+
+
+def cmd_demo(args) -> int:
+    print(demo.run(args.tz))
     return 0
 
 
 def cmd_mcp(args) -> int:
     return mcp.serve(config_path=args.config)
+
+
+def cmd_serve(args) -> int:
+    return server.serve(args.host, args.port, config_path=args.config, origins=args.allow_origin)
 
 
 def cmd_schema(args) -> int:
@@ -120,6 +120,10 @@ def cmd_call(args) -> int:
         return 1
     print(json.dumps({"ok": True, "text": text, "data": data}, indent=2, ensure_ascii=False))
     return 0
+
+
+COMMANDS = {"slots": cmd_slots, "demo": cmd_demo, "add": cmd_add, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp,
+            "serve": cmd_serve, "schema": cmd_schema, "call": cmd_call}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -145,6 +149,11 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--calendar", action="append", metavar="ADDRESS_OR_FILE", help="use this calendar instead of the configured ones; repeatable")
     s.add_argument("--config", metavar="FILE", help="settings file (default: ~/.config/when-free/config.toml)")
 
+    d = sub.add_parser("demo", help="see what it does with a made-up calendar, before adding yours",
+                       description="Answers a recruiter's message from a made-up calendar for next week. "
+                                   "Reads no settings, fetches nothing, saves nothing.")
+    d.add_argument("--tz", metavar="ZONE", help="time zone (default: yours)")
+
     a = sub.add_parser("add", help="add a calendar: asks for its address, checks it and saves it",
                        description="Add a calendar to the settings file. Without FILE it asks for the calendar's private "
                                    "address at a prompt that does not show it, or reads it from standard input: "
@@ -165,6 +174,16 @@ def _parser() -> argparse.ArgumentParser:
                        description="An MCP server for assistants and agents. It offers two tools: free_slots and check_calendars.")
     m.add_argument("--config", metavar="FILE")
 
+    sv = sub.add_parser("serve", help="run a local HTTP server with an OpenAPI description, for tools that cannot start a command",
+                        description="A local HTTP server: POST /free_slots and /check_calendars with JSON, or GET with a query "
+                                    "string. The OpenAPI description is at /openapi.json. Every tool call needs the token, "
+                                    "kept next to the settings file or taken from WHENFREE_TOKEN.")
+    sv.add_argument("--port", type=int, default=server.PORT, help=f"default {server.PORT}")
+    sv.add_argument("--host", default="127.0.0.1", help="default 127.0.0.1: this machine only")
+    sv.add_argument("--allow-origin", action="append", metavar="ORIGIN", default=[],
+                    help="let a web page from this origin call it, like http://localhost:3000; repeatable")
+    sv.add_argument("--config", metavar="FILE")
+
     sc = sub.add_parser("schema", help="print the tool definitions for a function-calling harness")
     sc.add_argument("--format", choices=("mcp", "openai"), default="mcp", help="mcp: name, description, inputSchema. openai: type function, parameters")
 
@@ -179,11 +198,10 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or (argv[0] not in COMMANDS and argv[0] not in ("-h", "--help", "--version")):
-        argv = ["slots"] + argv
+        argv = ["slots"] + argv                     # slots is the default command
     args = _parser().parse_args(argv)
-    handlers = {"slots": cmd_slots, "add": cmd_add, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp, "schema": cmd_schema, "call": cmd_call}
     try:
-        return handlers[args.command](args)
+        return COMMANDS[args.command](args)
     except (api.Problem, settings.ConfigError, ValueError) as e:
         print(f"whenfree: {e}", file=sys.stderr)
         return 1
