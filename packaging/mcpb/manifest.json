@@ -1,0 +1,65 @@
+{
+  "$schema": "https://raw.githubusercontent.com/modelcontextprotocol/mcpb/main/dist/mcpb-manifest-v0.4.schema.json",
+  "manifest_version": "0.4",
+  "name": "when-free",
+  "display_name": "when-free",
+  "version": "0.3.0",
+  "description": "Which days and times am I free? Reads your calendars and answers with the slots you can offer. Read-only.",
+  "long_description": "Ask Claude when you are free, or paste the message asking for your availability, and it answers from your real calendar: Google, Outlook, iCloud or any .ics feed. It understands explicit dates and words like \"next week\" or \"any afternoon\", keeps a buffer around events, and never sees event titles unless you ask. It only reads: it cannot create, change or delete anything. Runs on your computer; no account, no API key.",
+  "author": {
+    "name": "Yauhen Bichel",
+    "url": "https://github.com/YauhenBichel"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/YauhenBichel/when-free"
+  },
+  "homepage": "https://github.com/YauhenBichel/when-free",
+  "documentation": "https://github.com/YauhenBichel/when-free#readme",
+  "support": "https://github.com/YauhenBichel/when-free/issues",
+  "license": "Apache-2.0",
+  "keywords": ["calendar", "availability", "free-busy", "scheduling", "ics", "google-calendar", "outlook", "icloud"],
+  "server": {
+    "type": "uv",
+    "entry_point": "server.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "server.py"],
+      "env": {
+        "WHENFREE_CALENDARS": "${user_config.calendars}",
+        "WHENFREE_TZ": "${user_config.timezone}"
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "free_slots",
+      "description": "Free time per day for the days asked about, from explicit dates, a range, or a message."
+    },
+    {
+      "name": "check_calendars",
+      "description": "Whether each calendar can be read, with event counts. No details, no addresses."
+    }
+  ],
+  "user_config": {
+    "calendars": {
+      "type": "string",
+      "title": "Calendar addresses",
+      "description": "The private iCal address of each calendar, separated by commas. Google: Settings, your calendar, Integrate calendar, \"Secret address in iCal format\". Leave empty to use the calendars you saved with `whenfree add`.",
+      "sensitive": true,
+      "required": false
+    },
+    "timezone": {
+      "type": "string",
+      "title": "Time zone",
+      "description": "Like Europe/London. Leave empty to use your computer's.",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "linux", "win32"],
+    "runtimes": {
+      "python": ">=3.11"
+    }
+  }
+}

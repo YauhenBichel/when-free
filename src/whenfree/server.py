@@ -7,6 +7,9 @@ The same two tools as the MCP server, one path each, with JSON in and JSON out. 
 It is for this machine. It listens on 127.0.0.1, every tool call needs the token (a web page in your browser
 can reach 127.0.0.1 too), and a request whose Host is not this machine is refused, which stops a web page
 from reaching it through a name that points here (DNS rebinding).
+
+Listening on another address (`--host 0.0.0.0`, for a container or a phone) is a choice to be reachable by
+other names, so the Host check is then left out and the token is what protects it.
 """
 from __future__ import annotations
 
@@ -83,6 +86,7 @@ def openapi(base_url: str) -> dict:
 
 
 def make_handler(token: str, config_path: str | None, origins: list[str], base_url: str):
+    loopback = urllib.parse.urlsplit(base_url).hostname in LOCAL_NAMES
     class Handler(BaseHTTPRequestHandler):
         server_version = f"when-free/{__version__}"
         sys_version = ""
@@ -107,6 +111,8 @@ def make_handler(token: str, config_path: str | None, origins: list[str], base_u
             self.wfile.write(data)
 
         def _local_host(self) -> bool:
+            if not loopback:
+                return True
             host = (self.headers.get("Host") or "").strip().lower()       # "127.0.0.1:8765", "[::1]:8765"
             name = host[:host.find("]") + 1] if host.startswith("[") else host.split(":")[0]
             return name in LOCAL_NAMES or name == urllib.parse.urlsplit(base_url).hostname

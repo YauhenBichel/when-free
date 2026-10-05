@@ -1,6 +1,6 @@
 [project]
 name = "when-free"
-version = "0.2.0"
+version = "0.3.0"
 description = "Which days and times am I free? Reads your calendar feeds and a pasted message, and prints the slots you can offer. Runs on your own machine."
 readme = "README.md"
 license = "Apache-2.0"
@@ -20,6 +20,7 @@ dependencies = []            # the standard library is enough, on purpose
 
 [project.scripts]
 whenfree = "whenfree.cli:main"
+when-free = "whenfree.cli:main"      # so that `uvx when-free mcp` works without --from
 
 [project.urls]
 Homepage = "https://github.com/YauhenBichel/when-free"
@@ -36,7 +37,7 @@ build-backend = "hatchling.build"
 packages = ["src/whenfree"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "tests", "README.md", "LICENSE", "CHANGELOG.md"]
+include = ["src", "tests", "README.md", "LICENSE", "CHANGELOG.md", "server.json", "packaging"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,8 +1,11 @@
 name: release
 
-# Publishes to PyPI when a GitHub Release is published, with trusted publishing (OIDC): no API
-# token is stored anywhere. One-time setup on pypi.org by the owner: add a pending publisher for
-# project when-free, repository YauhenBichel/when-free, workflow release.yml, environment pypi.
+# When a GitHub Release is published:
+#   1. PyPI gets the package, with trusted publishing (OIDC): no API token is stored anywhere.
+#   2. The release gets when-free.mcpb, the Claude Desktop extension.
+#   3. The MCP registry gets server.json, also with OIDC.
+# One-time setup on pypi.org by the owner: add a pending publisher for project when-free,
+# repository YauhenBichel/when-free, workflow release.yml, environment pypi.
 on:
   release:
     types: [published]
@@ -48,3 +51,40 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # v1.14.2
+
+  mcpb:
+    needs: build
+    runs-on: ubuntu-24.04          # Node is preinstalled; the build uses npx
+    timeout-minutes: 15
+    permissions:
+      contents: write              # to attach the file to the release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build the Claude Desktop extension
+        run: packaging/mcpb/build.sh
+      - name: Attach it to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/when-free.mcpb --clobber
+
+  registry:
+    needs: pypi                    # the registry checks that the PyPI package exists
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      MCP_PUBLISHER: v1.8.1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: server.json names this version
+        run: |
+          test "v$(jq -r .version server.json)" = "$GITHUB_REF_NAME" || { echo "::error::server.json is not $GITHUB_REF_NAME"; exit 1; }
+      - name: Install mcp-publisher
+        run: |
+          curl -fsSL "https://github.com/modelcontextprotocol/registry/releases/download/${MCP_PUBLISHER}/mcp-publisher_linux_amd64.tar.gz" | tar xz mcp-publisher
+      - name: Publish to the MCP registry
+        run: |
+          ./mcp-publisher login github-oidc
+          ./mcp-publisher publish
