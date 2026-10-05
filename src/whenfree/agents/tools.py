@@ -48,6 +48,21 @@ _FREE_SLOTS = {
     },
 }
 
+_STATUS = {
+    "name": "status",
+    "description": ("Whether the user is free right now, until when, and their next free slot. Use it for "
+                    "\"am I free now?\", \"when is my next gap?\" or before interrupting the user. Returns no event "
+                    "titles."),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "min_minutes": {"type": "integer", "minimum": 1, "description": "Shortest gap that counts as the next free slot. Default: the user's setting."},
+            "timezone": {"type": "string", "description": "Time zone for the answer, like \"Europe/London\". Default: the user's zone."},
+        },
+        "additionalProperties": False,
+    },
+}
+
 _CHECK = {
     "name": "check_calendars",
     "description": ("Check that the user's calendars can be read. Returns each calendar's name, how many events it "
@@ -60,10 +75,17 @@ _TYPES = {"string": str, "integer": int, "boolean": bool}
 
 
 @dataclass(frozen=True)
+class Context:
+    """What a front end passes to every tool: which settings file, and how to read calendars (cached or not)."""
+    config_path: str | None = None
+    reader: Callable[[str], str] | None = None
+
+
+@dataclass(frozen=True)
 class Tool:
     """A tool: what it is called, how it is described to a model, and what runs it."""
     spec: dict
-    run: Callable[[dict, str | None], tuple[str, dict]]       # (arguments, settings path) -> (text, data)
+    run: Callable[[dict, Context], tuple[str, dict]]          # (arguments, context) -> (text, data)
 
     @property
     def name(self) -> str:
@@ -102,26 +124,33 @@ class Tool:
         return out
 
 
-def _run_free_slots(arguments: dict, config_path: str | None) -> tuple[str, dict]:
+def _run_free_slots(arguments: dict, ctx: Context) -> tuple[str, dict]:
     show_busy = bool(arguments.get("include_busy"))
     result = api.find_free(api.Query(
         days=arguments.get("days"), start=arguments.get("from"), end=arguments.get("to"),
         message=arguments.get("message"), hours=arguments.get("hours"),
         min_minutes=arguments.get("min_minutes"), buffer_minutes=arguments.get("buffer_minutes"),
         timezone=arguments.get("timezone"), weekends=bool(arguments.get("weekends")),
-        all_day_busy=bool(arguments.get("all_day_busy")), config_path=config_path))
+        all_day_busy=bool(arguments.get("all_day_busy")), config_path=ctx.config_path), reader=ctx.reader)
     if not show_busy:
         for day in result["days"]:
             del day["busy"]
     return render.answer(result, busy=show_busy), result
 
 
-def _run_check(arguments: dict, config_path: str | None) -> tuple[str, dict]:
-    data = api.check_calendars(config_path=config_path)
+def _run_check(arguments: dict, ctx: Context) -> tuple[str, dict]:
+    data = api.check_calendars(config_path=ctx.config_path, reader=ctx.reader)
     return "\n".join([f"Time zone: {data['timezone']}"] + render.calendars_checked(data)), data
 
 
-REGISTRY: dict[str, Tool] = {t.name: t for t in (Tool(_FREE_SLOTS, _run_free_slots), Tool(_CHECK, _run_check))}
+def _run_status(arguments: dict, ctx: Context) -> tuple[str, dict]:
+    data = api.status(config_path=ctx.config_path, timezone=arguments.get("timezone"),
+                      min_minutes=arguments.get("min_minutes"), reader=ctx.reader)
+    return "\n".join([render.status_line(data), *render.status_details(data)]), data
+
+
+REGISTRY: dict[str, Tool] = {t.name: t for t in (
+    Tool(_FREE_SLOTS, _run_free_slots), Tool(_STATUS, _run_status), Tool(_CHECK, _run_check))}
 TOOLS = [t.spec for t in REGISTRY.values()]
 
 
@@ -132,12 +161,13 @@ def get(name: str) -> Tool:
     return tool
 
 
-def call(name: str, arguments: dict | None = None, *, config_path: str | None = None) -> tuple[str, dict]:
+def call(name: str, arguments: dict | None = None, *, config_path: str | None = None,
+         reader: Callable[[str], str] | None = None) -> tuple[str, dict]:
     """Run a tool. Returns (text for a person or a model to read, the same answer as data). Raises api.Problem."""
     tool = get(name)
     arguments = arguments or {}
     tool.validate(arguments)
-    return tool.run(arguments, config_path)
+    return tool.run(arguments, Context(config_path, reader))
 
 
 def openai_schema() -> list[dict]:

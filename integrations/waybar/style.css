@@ -1,0 +1,5 @@
+/* Colours for the when-free module: the module's class is busy, free, off (outside working hours) or error. */
+#custom-when-free.busy  { color: #e06c75; }
+#custom-when-free.free  { color: #98c379; }
+#custom-when-free.off   { color: #abb2bf; }
+#custom-when-free.error { color: #e5c07b; }

@@ -1,5 +1,26 @@
 # Changelog
 
+## Unreleased
+
+On your other devices: phones and tablets, Home Assistant and voice assistants, desktop status bars.
+
+- `whenfree now`: free or busy right now, until when, and the next free slot, formatted for SwiftBar/xbar/Argos,
+  Waybar, i3blocks, Polybar, tmux, plain text or JSON. Calendars are kept for 5 minutes between runs, in
+  `~/.cache/when-free`, readable only by you and named by a hash. An unreadable calendar shows as "?", never free.
+  Plug-ins in `integrations/` for the macOS menu bar, Linux bars and the Windows notification area.
+- A `status` tool for agents and over HTTP (`/status`, and `/status.txt` as one line of text).
+- Phones and tablets: `whenfree serve --lan` and `whenfree devices add NAME`, which shows a QR code. Each device
+  has its own token, kept only as a hash and revocable with `whenfree devices remove`. A device sees free time and
+  the status, never event titles (403). The phone page at `/m` installs to the home screen, answers pasted
+  messages and works in light and dark mode. `/free.ics` is your free slots as a calendar that phones, tablets and
+  watches can subscribe to. `--tls-cert` and `--tls-key` serve HTTPS.
+- Smart homes: `whenfree mqtt --broker ...` publishes to MQTT with Home Assistant discovery (free now, status,
+  busy until, free until, next free, free today). From Home Assistant it reaches Alexa, Google Home, Apple Home
+  and Assist. The device goes unavailable when a calendar cannot be read. Examples for a busy light, voice and a
+  dashboard are in `integrations/homeassistant/examples.yaml`.
+- `whenfree serve` keeps calendars for 5 minutes, so phones and dashboards that ask often do not fetch them each
+  time.
+
 ## 0.3.0 (2026-10-05)
 
 Easier to start and to reach from other tools: on PyPI, a Claude Desktop extension, a local HTTP server,

@@ -1,0 +1,8 @@
+// Add "custom/when-free" to modules-left, modules-center or modules-right, then this block to your Waybar config.
+"custom/when-free": {
+    "exec": "whenfree now --format waybar",
+    "return-type": "json",
+    "interval": 60,
+    "tooltip": true,
+    "on-click": "whenfree now --format text | notify-send when-free"
+}

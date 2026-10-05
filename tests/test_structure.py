@@ -79,8 +79,10 @@ ALLOWED = {
     "calendars": {"core", "settings"},
     "api": {"core", "messages", "calendars", "settings"},
     "agents": {"api", "core"},
-    "web": {"api", "agents", "core", "settings"},
-    "cli": {"api", "agents", "web", "core", "messages", "calendars", "settings"},
+    "devices": {"api", "core", "settings"},
+    "smarthome": {"api", "core"},
+    "web": {"api", "agents", "devices", "calendars", "core", "settings"},
+    "cli": {"api", "agents", "web", "devices", "smarthome", "core", "messages", "calendars", "settings"},
 }
 
 
