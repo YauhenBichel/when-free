@@ -2,7 +2,14 @@
 
 ## Unreleased
 
-Setting up a calendar without editing a file.
+Setting up a calendar without editing a file, and messages that say "next week".
+
+- A message, `--days` and the `days` tool argument now understand days relative to today when no explicit date
+  is given: "today", "tomorrow", "Thursday" (the coming one), "this Tuesday", "next Tuesday" (of next week),
+  "next week", "this week", "the week after next", "Tuesday or Wednesday next week". Explicit dates still win,
+  so a "Next week:" heading over dated lines adds nothing.
+- "morning", "afternoon" and "evening" give the hours (09:00–12:00, 12:00–17:00, 17:00–20:00) when none are
+  stated, in a message or in `--hours`. "Good morning" is a greeting and is ignored.
 
 - `whenfree add` asks for a calendar's private address at a prompt that does not show it (or reads it from
   standard input: `pbpaste | whenfree add`), reads the calendar, and saves it in the settings file only if

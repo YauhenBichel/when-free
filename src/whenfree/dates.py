@@ -1,7 +1,8 @@
 """Read the days and hours someone proposed out of ordinary text, by pattern matching.
 
 "Wednesday 30th, Thursday 1st, between 10:00am and 4:00pm" -> two dates and (10:00, 16:00).
-No model is involved here. It is deliberately modest: it reads explicit dates, never "next week".
+No model is involved here. Explicit dates win: "tomorrow", "Thursday" and "next week" are read only from text
+that names no explicit date, so a heading like "Next week: Wednesday 30th" does not add a whole week.
 """
 from __future__ import annotations
 
@@ -79,7 +80,48 @@ def parse_days(text: str, today: dt.date) -> list[dt.date]:
     take(rf"\b{_WEEKDAY},?\s+(?:the\s+)?{_DAY}\b(?![:.]\d)",
          lambda m: _nearest_weekday_day(weekday(m.group(1)), int(m.group(2)), today)
          if 1 <= int(m.group(2)) <= 31 else None)
-    return sorted(found)
+    return sorted(found or relative_days(rest, today))
+
+
+# Whole names only: a bare "sun" or "sat" is too often an ordinary word.
+_NAMED_DAY = r"(monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+
+
+def relative_days(text: str, today: dt.date) -> set[dt.date]:
+    """Days named relative to today: "tomorrow", "Thursday", "next Tuesday", "next week", "Tuesday next week".
+
+    "Thursday" is the coming one (today, if today is Thursday). "next Thursday" is Thursday of next week, and
+    "this Thursday" of this week. A week on its own means its working days, from today on.
+    """
+    t = text.lower()
+    found: set[dt.date] = set()
+    for phrase, offset in ((r"(?:the\s+)?day\s+after\s+tomorrow", 2), (r"tomorrow", 1), (r"today", 0)):
+        if re.search(rf"\b{phrase}\b", t):
+            found.add(today + dt.timedelta(days=offset))
+            t = re.sub(rf"\b{phrase}\b", " ", t)
+    monday = today - dt.timedelta(days=today.weekday())
+    week = None
+    if re.search(r"\b(?:the\s+)?week\s+after\s+next\b", t):
+        week = 2
+    elif re.search(r"\b(?:next|the\s+following|following|coming)\s+week\b", t):
+        week = 1
+    elif re.search(r"\bthis\s+week\b|\brest\s+of\s+the\s+week\b", t):
+        week = 0
+    named = False
+    for m in re.finditer(rf"\b(?:(this|next|coming)\s+)?{_NAMED_DAY}\b", t):
+        named = True
+        wd = _WD.index(m.group(2)[:3])
+        if week is not None:                              # "Tuesday or Wednesday next week"
+            found.add(monday + dt.timedelta(weeks=week, days=wd))
+        elif m.group(1) == "next":
+            found.add(monday + dt.timedelta(weeks=1, days=wd))
+        elif m.group(1) == "this":
+            found.add(monday + dt.timedelta(days=wd))
+        else:
+            found.add(today + dt.timedelta(days=(wd - today.weekday()) % 7))
+    if week is not None and not named:
+        found |= {d for d in (monday + dt.timedelta(weeks=week, days=i) for i in range(5)) if d >= today}
+    return found
 
 
 def _clock(hour: int, minute: int, suffix: str | None) -> tuple[int, int]:
@@ -111,7 +153,14 @@ def parse_hours(text: str) -> tuple[dt.time, dt.time] | None:
             b = (b[0] + 12, b[1])                       # "10:00-4:00"
         if a[0] < 24 and b[0] < 24 and a[1] < 60 and b[1] < 60 and a < b:
             return dt.time(*a), dt.time(*b)
+    # "any afternoon", "Friday morning". Several parts give the span from the first to the last.
+    parts = [_PARTS[p.lower()] for p in re.findall(r"(?<!good )\b(morning|afternoon|evening)s?\b", text, re.I)]
+    if parts:
+        return dt.time(min(p[0] for p in parts)), dt.time(max(p[1] for p in parts))
     return None
+
+
+_PARTS = {"morning": (9, 12), "afternoon": (12, 17), "evening": (17, 20)}
 
 
 def hours_from_string(value: str) -> tuple[dt.time, dt.time]:
