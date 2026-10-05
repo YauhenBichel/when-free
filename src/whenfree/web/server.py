@@ -1,37 +1,65 @@
-"""A small HTTP server for tools that cannot start a command: Open WebUI, n8n, Shortcuts, Raycast, scripts.
+"""A small HTTP server for tools and devices that cannot start a command: Open WebUI, n8n, Shortcuts, phones.
 
-    whenfree serve                     # http://127.0.0.1:8765, OpenAPI description at /openapi.json
+    whenfree serve                     # http://127.0.0.1:8765, this computer only
+    whenfree serve --lan               # also reachable from phones and tablets on your network
 
-The same two tools as the MCP server, one path each, with JSON in and JSON out. Standard library only.
+The tools (one path each, JSON in and out, described at /openapi.json), a page for phones at /m, your free slots
+as a calendar feed at /free.ics, and the status right now at /status. Standard library only.
 
-It is for this machine. It listens on 127.0.0.1, every tool call needs the token (a web page in your browser
-can reach 127.0.0.1 too), and a request whose Host is not this machine is refused, which stops a web page
-from reaching it through a name that points here (DNS rebinding).
+Who may ask:
+- the owner's token (kept next to the settings file, or WHENFREE_TOKEN) may use every tool;
+- a paired device's token (`whenfree devices add`) may see free time and the status, never event titles.
 
-Listening on another address (`--host 0.0.0.0`, for a container or a phone) is a choice to be reachable by
-other names, so the Host check is then left out and the token is what protects it.
+It listens on 127.0.0.1 unless told otherwise. There, a request whose Host is not this machine is refused, which
+stops a web page from reaching it through a name that points here (DNS rebinding). Listening on another address
+(`--lan`, `--host`) is a choice to be reachable by other names, so the Host check is then left out and the tokens
+are what protect it; add `--tls-cert` and `--tls-key`, or put it behind Tailscale, to encrypt the traffic.
 """
 from __future__ import annotations
 
+import datetime as dt
 import hmac
+import importlib.resources
 import json
 import os
 import pathlib
 import secrets
+import socket
+import ssl
 import sys
 import urllib.parse
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .. import __version__, api, settings
 from ..agents import tools
+from ..calendars import cache
+from ..devices import feed, pairing
 
 PORT = 8765
 MAX_BODY = 64 * 1024
 LOCAL_NAMES = {"127.0.0.1", "localhost", "::1", "[::1]"}
+CACHE_SECONDS = 300
+FEED_DAYS = 14
+
+STATIC = {                                            # the phone page: no data in it, so no token needed
+    "m": ("index.html", "text/html; charset=utf-8"),
+    "app.js": ("app.js", "text/javascript; charset=utf-8"),
+    "app.css": ("app.css", "text/css; charset=utf-8"),
+    "manifest.webmanifest": ("manifest.webmanifest", "application/manifest+json"),
+    "icon.svg": ("icon.svg", "image/svg+xml"),
+}
+PAGE_HEADERS = {
+    "Content-Security-Policy": ("default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; "
+                                "connect-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; "
+                                "frame-ancestors 'none'"),
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+}
 
 
 def token_path(config_path: str | None = None) -> pathlib.Path:
-    """The token lives next to the settings file, readable only by you."""
+    """The owner's token lives next to the settings file, readable only by you."""
     base = pathlib.Path(config_path).expanduser() if config_path else settings.default_path()
     return base.parent / "token"
 
@@ -53,6 +81,16 @@ def load_token(config_path: str | None = None) -> tuple[str, str]:
     return token, str(path)
 
 
+def lan_address() -> str:
+    """This computer's address on the local network, as phones would reach it. No packet is sent."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+        try:
+            s.connect(("192.0.2.1", 9))                  # a documentation address: only picks the route
+            return s.getsockname()[0]
+        except OSError:
+            return "127.0.0.1"
+
+
 def openapi(base_url: str) -> dict:
     """An OpenAPI 3.1 description built from the same tool definitions the MCP server lists."""
     answer = {"type": "object", "properties": {
@@ -72,6 +110,7 @@ def openapi(base_url: str) -> dict:
                 "200": {"description": "The answer", "content": {"application/json": {"schema": answer}}},
                 "400": {"description": "It could not answer; `error` says why", "content": {"application/json": {"schema": answer}}},
                 "401": {"description": "Missing or wrong token"},
+                "403": {"description": "A paired device asked for something only the owner may see"},
             },
         }}
     return {
@@ -85,20 +124,39 @@ def openapi(base_url: str) -> dict:
     }
 
 
-def make_handler(token: str, config_path: str | None, origins: list[str], base_url: str):
+@dataclass(frozen=True)
+class Caller:
+    """Who is asking: the owner, or a paired device by name."""
+    device: str | None = None
+
+    @property
+    def owner(self) -> bool:
+        return self.device is None
+
+    def may(self, tool: str, arguments: dict) -> bool:
+        if self.owner:
+            return True
+        return tool in pairing.DEVICE_TOOLS and not arguments.get("include_busy")
+
+
+def make_handler(token: str, config_path: str | None, origins: list[str], base_url: str, reader):
     loopback = urllib.parse.urlsplit(base_url).hostname in LOCAL_NAMES
+    devices = pairing.Devices(pairing.store_path(config_path))
+    assets = importlib.resources.files("whenfree.devices") / "mobile"
+
     class Handler(BaseHTTPRequestHandler):
         server_version = f"when-free/{__version__}"
         sys_version = ""
 
-        def log_message(self, fmt, *args):            # one short line per request, never the query or body
+        def log_message(self, fmt, *args):            # one short line per request: never the query, body or token
             sys.stderr.write(f"{self.command} {urllib.parse.urlsplit(self.path).path} {args[1] if len(args) > 1 else ''}\n")
 
-        def _send(self, status: int, body: dict | None, extra: dict | None = None) -> None:
-            data = b"" if body is None else json.dumps(body, ensure_ascii=False, indent=2).encode()
+        # ---------- answering ----------
+
+        def _raw(self, status: int, data: bytes, content_type: str | None, extra: dict | None = None) -> None:
             self.send_response(status)
-            if body is not None:
-                self.send_header("Content-Type", "application/json; charset=utf-8")
+            if content_type:
+                self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
             self.send_header("Cache-Control", "no-store")
             origin = self.headers.get("Origin")
@@ -108,7 +166,18 @@ def make_handler(token: str, config_path: str | None, origins: list[str], base_u
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
             self.end_headers()
-            self.wfile.write(data)
+            if self.command != "HEAD":
+                self.wfile.write(data)
+
+        def _send(self, status: int, body: dict | None, extra: dict | None = None) -> None:
+            data = b"" if body is None else json.dumps(body, ensure_ascii=False, indent=2).encode()
+            self._raw(status, data, "application/json; charset=utf-8" if body is not None else None, extra)
+
+        def _refuse(self) -> None:
+            self._send(401, {"ok": False, "error": "send the token as: Authorization: Bearer <token>"},
+                       {"WWW-Authenticate": "Bearer"})
+
+        # ---------- who is asking ----------
 
         def _local_host(self) -> bool:
             if not loopback:
@@ -117,37 +186,86 @@ def make_handler(token: str, config_path: str | None, origins: list[str], base_u
             name = host[:host.find("]") + 1] if host.startswith("[") else host.split(":")[0]
             return name in LOCAL_NAMES or name == urllib.parse.urlsplit(base_url).hostname
 
-        def _authorised(self) -> bool:
+        def _caller(self, query_token: str | None = None) -> Caller | None:
             got = self.headers.get("Authorization", "")
-            return got.startswith("Bearer ") and hmac.compare_digest(got[7:].strip().encode(), token.encode())
+            given = got[7:].strip() if got.startswith("Bearer ") else (query_token or "")
+            if not given:
+                return None
+            if hmac.compare_digest(given.encode(), token.encode()):
+                return Caller()
+            device = devices.find(given)
+            return Caller(device.name) if device else None
+
+        # ---------- routes ----------
 
         def _route(self, body: dict | None) -> None:
             if not self._local_host():
                 return self._send(403, {"ok": False, "error": "this server answers only requests addressed to this machine"})
             url = urllib.parse.urlsplit(self.path)
             name = url.path.strip("/")
+            query = urllib.parse.parse_qsl(url.query, keep_blank_values=True)
             if name in ("", "health"):
                 return self._send(200, {"ok": True, "name": "when-free", "version": __version__,
                                         "openapi": f"{base_url}/openapi.json"})
             if name == "openapi.json":
                 return self._send(200, openapi(base_url))
+            if name in STATIC:
+                file, kind = STATIC[name]
+                return self._raw(200, (assets / file).read_bytes(), kind, PAGE_HEADERS)
+            if name == "free.ics":
+                return self._feed(dict(query).get("t"))
+            if name == "status.txt":
+                return self._status_text()
             tool = tools.REGISTRY.get(name)
             if tool is None:
                 return self._send(404, {"ok": False, "error": f"no such path. Tools: {', '.join('/' + t for t in tools.REGISTRY)}"})
-            if not self._authorised():
-                return self._send(401, {"ok": False, "error": "send the token as: Authorization: Bearer <token>"},
-                                  {"WWW-Authenticate": "Bearer"})
-            arguments = body if body is not None else tool.coerce(urllib.parse.parse_qsl(url.query, keep_blank_values=True))
+            caller = self._caller()
+            if caller is None:
+                return self._refuse()
+            arguments = body if body is not None else tool.coerce(query)
+            if not caller.may(name, arguments if isinstance(arguments, dict) else {}):
+                return self._send(403, {"ok": False, "error": f"the device '{caller.device}' may see free time and "
+                                                             "the status, not event titles or calendar details"})
             try:
-                text, data = tools.call(name, arguments, config_path=config_path)
+                text, data = tools.call(name, arguments, config_path=config_path, reader=reader)
             except api.Problem as e:
                 return self._send(400, {"ok": False, "error": str(e)})
             except Exception as e:                    # never a traceback, never an address
                 return self._send(500, {"ok": False, "error": f"when-free failed: {e.__class__.__name__}"})
             self._send(200, {"ok": True, "text": text, "data": data})
 
+        def _feed(self, query_token: str | None) -> None:
+            """Calendar apps cannot send a header, so the token may come in the address: ?t=..."""
+            if self._caller(query_token) is None:
+                return self._raw(401, b"not paired\n", "text/plain; charset=utf-8")
+            try:
+                today = settings.now(dt.timezone.utc).date()
+                result = api.find_free(api.Query(start=today.isoformat(),
+                                                 end=(today + dt.timedelta(days=FEED_DAYS - 1)).isoformat(),
+                                                 config_path=config_path), reader=reader)
+            except api.Problem as e:
+                # A feed that fails keeps the calendar app's last copy rather than showing an empty week as free.
+                return self._raw(503, f"{e}\n".encode(), "text/plain; charset=utf-8", {"Retry-After": "900"})
+            host = urllib.parse.urlsplit(base_url).hostname or "when-free"
+            self._raw(200, feed.calendar(result, host=host).encode(), "text/calendar; charset=utf-8",
+                      {"Content-Disposition": 'inline; filename="free.ics"'})
+
+        def _status_text(self) -> None:
+            """One line of plain text, for the smallest devices and scripts."""
+            if self._caller() is None:
+                return self._refuse()
+            try:
+                text, _ = tools.call("status", {}, config_path=config_path, reader=reader)
+            except api.Problem as e:
+                return self._raw(503, f"? {e}\n".encode(), "text/plain; charset=utf-8")
+            self._raw(200, (text.splitlines()[0] + "\n").encode(), "text/plain; charset=utf-8")
+
+        # ---------- methods ----------
+
         def do_GET(self):
             self._route(None)
+
+        do_HEAD = do_GET
 
         def do_POST(self):
             length = int(self.headers.get("Content-Length") or 0)
@@ -172,26 +290,41 @@ def make_handler(token: str, config_path: str | None, origins: list[str], base_u
 
 
 def make_server(host: str = "127.0.0.1", port: int = PORT, token: str = "", config_path: str | None = None,
-                origins: list[str] | None = None) -> ThreadingHTTPServer:
-    shown = f"[{host}]" if ":" in host else host
+                origins: list[str] | None = None, *, tls: tuple[str, str] | None = None,
+                reader=None, public_host: str | None = None) -> ThreadingHTTPServer:
+    """`public_host` is the name or address devices use, when it differs from the one listened on (0.0.0.0)."""
     server = ThreadingHTTPServer((host, port), None)
-    base_url = f"http://{shown}:{server.server_address[1]}"
-    server.RequestHandlerClass = make_handler(token, config_path, origins or [], base_url)
+    if tls:
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.minimum_version = ssl.TLSVersion.TLSv1_2
+        context.load_cert_chain(*tls)
+        server.socket = context.wrap_socket(server.socket, server_side=True)
+    shown = public_host or host
+    shown = f"[{shown}]" if ":" in shown else shown
+    base_url = f"{'https' if tls else 'http'}://{shown}:{server.server_address[1]}"
+    server.RequestHandlerClass = make_handler(token, config_path, origins or [], base_url,
+                                              reader if reader is not None else cache.MemoryCache(CACHE_SECONDS))
     server.base_url = base_url
     return server
 
 
 def serve(host: str = "127.0.0.1", port: int = PORT, config_path: str | None = None,
-          origins: list[str] | None = None) -> int:
+          origins: list[str] | None = None, *, lan: bool = False, tls: tuple[str, str] | None = None) -> int:
     token, source = load_token(config_path)
-    server = make_server(host, port, token, config_path, origins)
-    print(f"when-free {__version__} on {server.base_url}\n"
-          f"  OpenAPI:  {server.base_url}/openapi.json\n"
-          f"  Token:    {'from ' + source if source == 'WHENFREE_TOKEN' else 'in ' + source}"
-          f" (send it as: Authorization: Bearer <token>)\n"
-          f"  Try:      curl -H \"Authorization: Bearer $(cat {token_path(config_path)})\" "
-          f"'{server.base_url}/free_slots?days=tomorrow'\n"
-          "Ctrl-C stops it.", file=sys.stderr)
+    if lan and host == "127.0.0.1":
+        host = "0.0.0.0"
+    public = lan_address() if host in ("0.0.0.0", "::") else None
+    server = make_server(host, port, token, config_path, origins, tls=tls, public_host=public)
+    lines = [f"when-free {__version__} on {server.base_url}",
+             f"  OpenAPI:  {server.base_url}/openapi.json",
+             f"  Token:    {'from ' + source if source == 'WHENFREE_TOKEN' else 'in ' + source}"
+             " (send it as: Authorization: Bearer <token>)"]
+    if public:
+        lines += [f"  Phones:   whenfree devices add \"Your phone\" --url {server.base_url}",
+                  "  Reachable from your network; the tokens protect it." +
+                  ("" if tls else " Traffic is not encrypted: use it at home, or with --tls-cert/--tls-key or Tailscale.")]
+    lines.append("Ctrl-C stops it.")
+    print("\n".join(lines), file=sys.stderr)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

@@ -7,11 +7,15 @@ import json
 import os
 import pathlib
 import sys
+import urllib.parse
 
 from .. import __version__, api, settings
 from ..agents import mcp, tools
-from ..calendars import sources
+from ..calendars import cache, sources
 from ..core import render
+from ..devices import pairing, qr, widgets
+from ..smarthome import homeassistant
+from ..smarthome import mqtt as mqttlib
 from ..web import server
 from . import demo
 
@@ -91,6 +95,37 @@ def cmd_check(args) -> int:
     return 0
 
 
+def cmd_now(args) -> int:
+    """Free or busy now, for status bars. A problem is shown in the bar's own format, never as free."""
+    reader = cache.DiskCache(args.cache * 60) if args.cache > 0 else None
+    try:
+        st = api.status(config_path=args.config, calendars=args.calendar, timezone=args.tz,
+                        min_minutes=args.min, reader=reader)
+    except (api.Problem, settings.ConfigError) as e:
+        print(widgets.show_problem(str(e).splitlines()[0], args.format))
+        return 0 if args.format in ("waybar", "xbar", "i3blocks", "polybar", "tmux") else 1
+    print(widgets.show(st, args.format))
+    return 0
+
+
+def cmd_mqtt(args) -> int:
+    """Publish free/busy to an MQTT broker, with Home Assistant discovery. The password comes from the environment."""
+    password = os.environ.get("WHENFREE_MQTT_PASSWORD") or None
+    try:
+        broker = mqttlib.Broker.parse(args.broker, password)
+    except mqttlib.MqttError as e:
+        raise api.Problem(str(e)) from None
+    topics = homeassistant.Topics(args.topic, args.node, args.discovery_prefix)
+    reader = cache.MemoryCache(300)
+    status = lambda: api.status(config_path=args.config, timezone=args.tz, reader=reader)
+    client = mqttlib.Client(broker, topics.node, keepalive=max(60, int(args.interval * 2)))
+    publisher = homeassistant.Publisher(client, topics, status, interval=args.interval)
+    try:
+        return publisher.run(once=args.once)
+    except mqttlib.MqttError as e:
+        raise api.Problem(str(e)) from None
+
+
 def cmd_demo(args) -> int:
     print(demo.run(args.tz))
     return 0
@@ -101,7 +136,43 @@ def cmd_mcp(args) -> int:
 
 
 def cmd_serve(args) -> int:
-    return server.serve(args.host, args.port, config_path=args.config, origins=args.allow_origin)
+    if bool(args.tls_cert) != bool(args.tls_key):
+        raise api.Problem("give both --tls-cert and --tls-key, or neither")
+    tls = (args.tls_cert, args.tls_key) if args.tls_cert else None
+    return server.serve(args.host, args.port, config_path=args.config, origins=args.allow_origin, lan=args.lan, tls=tls)
+
+
+def cmd_devices(args) -> int:
+    """Pair a phone or tablet with `whenfree serve`, list them, or remove one."""
+    store = pairing.Devices(pairing.store_path(args.config))
+    if args.action == "list":
+        found = store.all()
+        for d in found:
+            print(f"{d.name}   added {d.added}")
+        if not found:
+            print('No devices. Add one with: whenfree devices add "My phone"', file=sys.stderr)
+        return 0
+    if not args.name:
+        raise api.Problem(f'name the device: whenfree devices {args.action} "My phone"')
+    if args.action == "remove":
+        gone = store.remove(args.name)
+        print(f"Removed '{gone.name}'. Its token no longer works.")
+        return 0
+    base = (args.url or f"http://{server.lan_address()}:{server.PORT}").rstrip("/")
+    device, token = store.add(args.name)
+    page = f"{base}/m#" + urllib.parse.urlencode({"t": token, "n": device.name})
+    split = urllib.parse.urlsplit(base)
+    feed_url = (("webcal" if split.scheme == "http" else "https") + "://" + split.netloc + split.path
+                + "/free.ics?t=" + token)
+    shown = feed_url if args.show == "calendar" else page
+    print(f"Added '{device.name}'. On the phone, point the camera at this code:\n", file=sys.stderr)
+    print(qr.to_terminal(qr.encode(shown, "L")))
+    print(f"\n  Page:      {page}\n  Calendar:  {feed_url}\n", file=sys.stderr)
+    print("The page shows whether you are free now and answers messages; the calendar puts your free slots in\n"
+          "the phone's own calendar app. Both work while `whenfree serve --lan` runs and the phone can reach this\n"
+          "computer. The token is shown only now. Remove the device with:\n"
+          f"  whenfree devices remove \"{device.name}\"", file=sys.stderr)
+    return 0
 
 
 def cmd_schema(args) -> int:
@@ -126,8 +197,8 @@ def cmd_call(args) -> int:
     return 0
 
 
-COMMANDS = {"slots": cmd_slots, "demo": cmd_demo, "add": cmd_add, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp,
-            "serve": cmd_serve, "schema": cmd_schema, "call": cmd_call}
+COMMANDS = {"slots": cmd_slots, "now": cmd_now, "demo": cmd_demo, "add": cmd_add, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp,
+            "serve": cmd_serve, "devices": cmd_devices, "mqtt": cmd_mqtt, "schema": cmd_schema, "call": cmd_call}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -152,6 +223,31 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--no-extract", action="store_true", help="do not run the [extract] command; read dates by pattern matching")
     s.add_argument("--calendar", action="append", metavar="ADDRESS_OR_FILE", help="use this calendar instead of the configured ones; repeatable")
     s.add_argument("--config", metavar="FILE", help="settings file (default: ~/.config/when-free/config.toml)")
+
+    n = sub.add_parser("now", help="free or busy right now, for status bars and widgets",
+                       description="Free or busy now, until when, and the next free slot. Formats for Waybar, "
+                                   "i3blocks, Polybar, SwiftBar/xbar/Argos and tmux. Event titles are never shown.")
+    n.add_argument("--format", choices=widgets.FORMATS, default="text")
+    n.add_argument("--min", type=int, metavar="MINUTES", help="shortest slot that counts as the next free one")
+    n.add_argument("--cache", type=float, default=5, metavar="MINUTES",
+                   help="reuse a calendar fetched less than this long ago (default 5; 0 fetches every time)")
+    n.add_argument("--tz", metavar="ZONE")
+    n.add_argument("--calendar", action="append", metavar="ADDRESS_OR_FILE")
+    n.add_argument("--config", metavar="FILE")
+
+    mq = sub.add_parser("mqtt", help="publish free/busy to MQTT, with Home Assistant discovery",
+                        description="Publishes whether you are free now, until when, and your next free slot to an MQTT "
+                                    "broker, and announces them to Home Assistant. No event titles. The password, if "
+                                    "the broker needs one, comes from WHENFREE_MQTT_PASSWORD.")
+    mq.add_argument("--broker", required=True, metavar="ADDRESS",
+                    help="mqtt://user@homeassistant.local:1883, or mqtts://... for TLS")
+    mq.add_argument("--topic", default="whenfree", help="base topic (default whenfree)")
+    mq.add_argument("--node", help="this computer's id in the topics (default: from its host name)")
+    mq.add_argument("--discovery-prefix", default="homeassistant", help="Home Assistant's discovery prefix")
+    mq.add_argument("--interval", type=float, default=60, metavar="SECONDS", help="how often to check (default 60)")
+    mq.add_argument("--once", action="store_true", help="publish once and stop, to try the set-up")
+    mq.add_argument("--tz", metavar="ZONE")
+    mq.add_argument("--config", metavar="FILE")
 
     d = sub.add_parser("demo", help="see what it does with a made-up calendar, before adding yours",
                        description="Answers a recruiter's message from a made-up calendar for next week. "
@@ -186,7 +282,21 @@ def _parser() -> argparse.ArgumentParser:
     sv.add_argument("--host", default="127.0.0.1", help="default 127.0.0.1: this machine only")
     sv.add_argument("--allow-origin", action="append", metavar="ORIGIN", default=[],
                     help="let a web page from this origin call it, like http://localhost:3000; repeatable")
+    sv.add_argument("--lan", action="store_true", help="also listen on your local network, for phones and tablets")
+    sv.add_argument("--tls-cert", metavar="FILE", help="serve HTTPS with this certificate (PEM)")
+    sv.add_argument("--tls-key", metavar="FILE", help="and this private key (PEM)")
     sv.add_argument("--config", metavar="FILE")
+
+    dv = sub.add_parser("devices", help="pair phones and tablets with whenfree serve, list them, or remove one",
+                        description="Each device gets its own token, shown once as a QR code. A device may see your "
+                                    "free time and whether you are free now, never event titles.")
+    dv.add_argument("action", choices=("add", "list", "remove"))
+    dv.add_argument("name", nargs="?", help='what to call it, like "Alex\'s iPhone"')
+    dv.add_argument("--url", help="the address the device uses to reach this computer "
+                                  f"(default: http://<this computer on your network>:{server.PORT})")
+    dv.add_argument("--show", choices=("page", "calendar"), default="page",
+                    help="what the QR code opens: the phone page (default) or the calendar subscription")
+    dv.add_argument("--config", metavar="FILE")
 
     sc = sub.add_parser("schema", help="print the tool definitions for a function-calling harness")
     sc.add_argument("--format", choices=("mcp", "openai"), default="mcp", help="mcp: name, description, inputSchema. openai: type function, parameters")

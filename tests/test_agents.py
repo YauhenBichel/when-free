@@ -74,7 +74,7 @@ def test_check_calendars_gives_counts_and_no_details():
 
 def test_schemas_describe_the_same_tools():
     names = [t["name"] for t in tools.TOOLS]
-    assert names == ["free_slots", "check_calendars"]
+    assert names == ["free_slots", "status", "check_calendars"]
     assert [f["function"]["name"] for f in tools.openai_schema()] == names
     assert tools.openai_schema()[0]["function"]["parameters"]["additionalProperties"] is False
 
@@ -119,7 +119,7 @@ def test_mcp_handshake_and_tool_list():
     init = answers[0]["result"]
     assert init["protocolVersion"] == "2025-03-26" and init["serverInfo"]["name"] == "when-free"
     assert init["capabilities"] == {"tools": {"listChanged": False}}
-    assert [t["name"] for t in answers[1]["result"]["tools"]] == ["free_slots", "check_calendars"]
+    assert [t["name"] for t in answers[1]["result"]["tools"]] == ["free_slots", "status", "check_calendars"]
     assert answers[2] == {"jsonrpc": "2.0", "id": 3, "result": {}}
 
 

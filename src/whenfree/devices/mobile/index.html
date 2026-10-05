@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f6f5c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="when-free">
+<meta name="referrer" content="no-referrer">
+<title>when-free</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="app.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>when-free</h1>
+    <p id="device" class="quiet"></p>
+  </header>
+
+  <section id="now" class="card" aria-live="polite">
+    <p class="label">Right now</p>
+    <p id="status" class="big">…</p>
+    <p id="status-more" class="quiet"></p>
+  </section>
+
+  <section class="card">
+    <p class="label">Someone asked when you're free?</p>
+    <form id="ask">
+      <label for="message" class="sr">The message</label>
+      <textarea id="message" rows="4" placeholder="Paste their message, or type: Tuesday or Wednesday next week, afternoon"></textarea>
+      <div class="row">
+        <button type="submit">Find my free times</button>
+        <button type="button" id="paste" class="secondary">Paste</button>
+      </div>
+    </form>
+  </section>
+
+  <section id="answer" class="card" hidden>
+    <p class="label" id="answer-head"></p>
+    <pre id="answer-text"></pre>
+    <p id="answer-note" class="quiet"></p>
+    <div class="row">
+      <button type="button" id="copy">Copy</button>
+      <button type="button" id="share" class="secondary" hidden>Share</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <p class="label">Coming days</p>
+    <ul id="week" class="days"></ul>
+  </section>
+
+  <p id="error" class="error" role="alert" hidden></p>
+
+  <section id="setup" class="card" hidden>
+    <p class="label">Not paired</p>
+    <p>Open this page from the QR code that <code>whenfree devices add</code> shows on your computer.</p>
+  </section>
+</main>
+</body>
+</html>

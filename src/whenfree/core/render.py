@@ -49,3 +49,36 @@ def answer(result: dict, busy: bool = False) -> str:
 def calendars_checked(data: dict) -> list[str]:
     return [f"ok  {c['name']}: {c['events']} events, {c['blocking_next_14_days']} block time in the next 14 days"
             for c in data["calendars"]]
+
+
+def _hhmm(iso: str) -> str:
+    return iso[11:16]
+
+
+def _when(slot: dict, today: str) -> str:
+    day = "" if slot["date"] == today else label(dt.date.fromisoformat(slot["date"])) + " "
+    return f"{day}{slot['start']}–{slot['end']}"
+
+
+def status_line(st: dict) -> str:
+    """One short line for a status bar, a watch or a speaker: "Busy until 15:30 · next free 15:45–17:00"."""
+    today = st["now"][:10]
+    nxt = st["next_free"]
+    if not st["free_now"]:
+        head = f"Busy until {_hhmm(st['busy_until'])}"
+    elif st["free_until"]:
+        head = f"Free until {_hhmm(st['free_until'])}"
+    else:
+        head = "Free for the rest of the day"
+    if nxt and (not st["free_now"] or not st["in_hours"]):
+        return f"{head} · next free {_when(nxt, today)}"
+    return head
+
+
+def status_details(st: dict) -> list[str]:
+    """A few lines under the status line: what is left of today, and the next slot."""
+    today = st["now"][:10]
+    out = ["Today: " + (", ".join(f"{a}–{b}" for a, b in st["today"]) or "no free slot left")]
+    if st["next_free"]:
+        out.append("Next free: " + _when(st["next_free"], today))
+    return out

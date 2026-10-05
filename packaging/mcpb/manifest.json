@@ -18,13 +18,27 @@
   "documentation": "https://github.com/YauhenBichel/when-free#readme",
   "support": "https://github.com/YauhenBichel/when-free/issues",
   "license": "Apache-2.0",
-  "keywords": ["calendar", "availability", "free-busy", "scheduling", "ics", "google-calendar", "outlook", "icloud"],
+  "keywords": [
+    "calendar",
+    "availability",
+    "free-busy",
+    "scheduling",
+    "ics",
+    "google-calendar",
+    "outlook",
+    "icloud"
+  ],
   "server": {
     "type": "uv",
     "entry_point": "server.py",
     "mcp_config": {
       "command": "uv",
-      "args": ["run", "--directory", "${__dirname}", "server.py"],
+      "args": [
+        "run",
+        "--directory",
+        "${__dirname}",
+        "server.py"
+      ],
       "env": {
         "WHENFREE_CALENDARS": "${user_config.calendars}",
         "WHENFREE_TZ": "${user_config.timezone}"
@@ -35,6 +49,10 @@
     {
       "name": "free_slots",
       "description": "Free time per day for the days asked about, from explicit dates, a range, or a message."
+    },
+    {
+      "name": "status",
+      "description": "Whether you are free right now, until when, and your next free slot. No event titles."
     },
     {
       "name": "check_calendars",
@@ -57,7 +75,11 @@
     }
   },
   "compatibility": {
-    "platforms": ["darwin", "linux", "win32"],
+    "platforms": [
+      "darwin",
+      "linux",
+      "win32"
+    ],
     "runtimes": {
       "python": ">=3.11"
     }

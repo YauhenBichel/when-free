@@ -14,10 +14,11 @@
 - **Works with Google, Outlook and iCloud** calendars, or any `.ics` file. Several calendars at once.
 - **Private.** It runs on your computer, needs no account and no API key, and never changes your calendar.
 - **Works from your AI tools too:** Claude, Cursor and other MCP clients, Open WebUI, n8n, Shortcuts, scripts.
+- **And on your other devices:** phones, tablets and watches, Home Assistant (and Alexa, Google Home, Siri through it), and the menu bar or status bar of macOS, Linux and Windows.
 
 ## Contents
 
-[Try it](#try-it-in-a-minute) · [Add your calendar](#add-your-calendar) · [Everyday use](#everyday-use) · [Reading a message](#reading-a-message) · [Use it from other tools](#use-it-from-other-tools) · [Privacy](#privacy) · [Settings](#settings) · [What counts as busy](#what-counts-as-busy) · [Limits](#limits) · [Problems](#if-something-does-not-work)
+[Try it](#try-it-in-a-minute) · [Add your calendar](#add-your-calendar) · [Everyday use](#everyday-use) · [Reading a message](#reading-a-message) · [Use it from other tools](#use-it-from-other-tools) · [Other devices](#on-your-other-devices) · [Privacy](#privacy) · [Settings](#settings) · [What counts as busy](#what-counts-as-busy) · [Limits](#limits) · [Problems](#if-something-does-not-work)
 
 ## Try it in a minute
 
@@ -237,6 +238,21 @@ for day in result["days"]:
 
 `find_free` returns plain dicts and lists, ready for `json.dumps`, and raises `api.Problem` with a message that's safe to show. Pass `reader=` to supply calendar text yourself instead of fetching it.
 
+## On your other devices
+
+| Device | Start with | Guide |
+|---|---|---|
+| iPhone, iPad, Android, watches | `whenfree serve --lan`, then `whenfree devices add "My phone"` and scan the QR code | [Phones and tablets](https://github.com/YauhenBichel/when-free/blob/main/docs/devices.md#phones-and-tablets) |
+| Home Assistant, Alexa, Google Home, Siri, busy lights | `whenfree mqtt --broker mqtt://homeassistant.local` | [Smart home and voice](https://github.com/YauhenBichel/when-free/blob/main/docs/devices.md#smart-home-and-voice) |
+| macOS menu bar, Waybar, i3blocks, Polybar, GNOME, Windows tray | `whenfree now --format xbar` (or `waybar`, `i3blocks`, …) | [Desktop status bars](https://github.com/YauhenBichel/when-free/blob/main/docs/devices.md#desktop-status-bars) |
+
+```console
+$ whenfree now
+Busy until 15:30 · next free 15:45–17:00
+```
+
+Devices see whether you're free and your free slots, never event titles. Each phone has its own token that you can revoke, and an unreadable calendar shows as "unknown", never "free".
+
 ## Privacy
 
 - **It runs on your computer.** It fetches your calendar feeds and nothing else. It never writes to a calendar and never sends a message.
@@ -322,13 +338,15 @@ The tests use a small calendar in `tests/data/sample.ics` and a fixed clock (`WH
 
 | Component | Holds | May use |
 |---|---|---|
-| `core/` | `ical`, `slots`, `render`, `errors`: events, busy time, free slots, the wording of an answer. No input or output | nothing |
+| `core/` | `ical`, `slots`, `status`, `render`, `errors`: events, busy time, free slots, where you stand now, the wording. No input or output | nothing |
 | `messages/` | `dates`, `extract`: days and hours read out of a message | `core` |
 | `settings/` | `config`: the settings file and environment variables | nothing |
 | `calendars/` | `sources`: calendars fetched from an address or read from a file | `core`, `settings` |
-| `api.py` | `find_free`, `check_calendars`: the one entry point for every front end | the four above |
+| `api.py` | `find_free`, `status`, `check_calendars`: the one entry point for every front end | the four above |
 | `agents/` | `tools`, `mcp`: the tools offered to AI agents, and the MCP server | `api`, `core` |
-| `web/` | `server`: the HTTP front end | `api`, `agents`, `core`, `settings` |
+| `web/` | `server`: the HTTP front end, for tools and phones | `api`, `agents`, `devices`, `calendars`, `core`, `settings` |
+| `devices/` | `widgets`, `pairing`, `feed`, `qr`, `mobile/`: status bars, phone pairing, the calendar feed, the phone page | `api`, `core`, `settings` |
+| `smarthome/` | `mqtt`, `homeassistant`: MQTT publishing with Home Assistant discovery | `api`, `core` |
 | `cli/` | `main`, `demo`: the `whenfree` command | anything |
 
 `tests/test_structure.py` fails if a component imports one it may not, so the domain stays free of front ends.

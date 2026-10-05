@@ -1,0 +1,80 @@
+# Home Assistant examples for when-free. Run `whenfree mqtt --broker mqtt://homeassistant.local` first:
+# the entities below appear by themselves under Settings → Devices → when-free.
+
+# ---------- A busy light at the door ----------
+# Red while you are in a meeting, off otherwise. Replace light.office_door with your light.
+automation:
+  - alias: "Busy light follows when-free"
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.when_free_free_now
+    actions:
+      - choose:
+          - conditions:
+              - condition: state
+                entity_id: binary_sensor.when_free_free_now
+                state: "off"
+            sequence:
+              - action: light.turn_on
+                target: { entity_id: light.office_door }
+                data: { rgb_color: [255, 40, 40], brightness_pct: 60 }
+        default:
+          - action: light.turn_off
+            target: { entity_id: light.office_door }
+
+  # ---------- Don't disturb: quieter doorbell while busy ----------
+  - alias: "Doorbell chime only when free"
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.doorbell_button
+        to: "on"
+    conditions:
+      - condition: state
+        entity_id: binary_sensor.when_free_free_now
+        state: "on"
+    actions:
+      - action: media_player.play_media
+        target: { entity_id: media_player.kitchen }
+        data: { media_content_id: "media-source://media_source/local/chime.mp3", media_content_type: "music" }
+
+# ---------- Voice: "Is Alex free?" ----------
+# Home Assistant's own voice assistant (Assist), in any language it supports. Alexa and Google Home can see
+# binary_sensor.when_free_free_now once you expose it to them (Settings → Voice assistants → Expose).
+conversation:
+  intents:
+    WhenFreeStatus:
+      - "is (Alex|he|she|they) free [now]"
+      - "when is (Alex|he|she|they) free"
+      - "can I disturb (Alex|him|her|them)"
+intent_script:
+  WhenFreeStatus:
+    speech:
+      text: "{{ states('sensor.when_free_status') | replace('·', ',') | replace('–', ' to ') }}"
+
+# ---------- A dashboard card ----------
+# Add through Edit dashboard → Add card → Manual:
+#
+# type: entities
+# title: Alex
+# entities:
+#   - entity: binary_sensor.when_free_free_now
+#   - entity: sensor.when_free_status
+#   - entity: sensor.when_free_next_free
+#     format: relative
+#   - entity: sensor.when_free_today
+
+# ---------- Without MQTT: the HTTP server ----------
+# If `whenfree serve --lan` runs on the computer, a REST sensor can read it instead. Pair Home Assistant as a
+# device (`whenfree devices add "Home Assistant"`) and put its token in secrets.yaml as when_free_token.
+#
+# rest:
+#   - resource: http://alex-mac.local:8765/status
+#     headers:
+#       Authorization: !secret when_free_token_header     # "Bearer <token>"
+#     scan_interval: 60
+#     sensor:
+#       - name: "when-free status"
+#         value_template: "{{ value_json.text.split('\n')[0] }}"
+#     binary_sensor:
+#       - name: "when-free free now"
+#         value_template: "{{ value_json.data.free_now }}"

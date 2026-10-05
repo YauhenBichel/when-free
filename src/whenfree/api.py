@@ -23,6 +23,7 @@ from . import settings
 from .calendars import sources
 from .calendars.sources import NO_SLOTS, URL  # noqa: F401
 from .core import ical, slots
+from .core import status as standing
 from .core.errors import Problem
 from .core.render import label, lines  # noqa: F401  (kept here for existing callers)
 from .messages import dates, extract
@@ -192,18 +193,24 @@ def _plan(q: Query, cfg: settings.Config) -> _Plan:
 
 # ---------- the answer ----------
 
-def _busy(plan: _Plan, cfg: settings.Config, reader) -> tuple[list[slots.Busy], list[str], int]:
-    window_start = dt.datetime.combine(min(plan.days), dt.time.min, plan.tz)
-    window_end = dt.datetime.combine(max(plan.days) + dt.timedelta(days=1), dt.time.min, plan.tz)
+def _load_busy(calendars: list[settings.Calendar], tz, start: dt.date, end: dt.date, cfg: settings.Config,
+               all_day_busy: bool, reader) -> tuple[list[slots.Busy], list[str], int]:
+    """Busy blocks from every calendar between the start of `start` and the end of `end`."""
+    window_start = dt.datetime.combine(start, dt.time.min, tz)
+    window_end = dt.datetime.combine(end + dt.timedelta(days=1), dt.time.min, tz)
     busy: list[slots.Busy] = []
     notes: list[str] = []
     events_read = 0
-    for name, events in sources.load(plan.calendars, plan.tz, reader=reader):
+    for name, events in sources.load(calendars, tz, reader=reader):
         events_read += len(events)
-        busy += slots.busy_blocks(events, window_start, window_end, me=cfg.me, all_day_busy=plan.all_day_busy,
+        busy += slots.busy_blocks(events, window_start, window_end, me=cfg.me, all_day_busy=all_day_busy,
                                   calendar=name, warnings=notes)
     busy.sort(key=lambda b: (b.start, b.end))
     return busy, notes, events_read
+
+
+def _busy(plan: _Plan, cfg: settings.Config, reader) -> tuple[list[slots.Busy], list[str], int]:
+    return _load_busy(plan.calendars, plan.tz, min(plan.days), max(plan.days), cfg, plan.all_day_busy, reader)
 
 
 def _day(d: dt.date, plan: _Plan, busy: list[slots.Busy]) -> dict:
@@ -237,6 +244,25 @@ def find_free(q: Query, *, reader: sources.Reader | None = None) -> dict:
         "notes": notes,
         "events_read": events_read, "calendars": len(plan.calendars), "blocking": len(busy),
     }
+
+
+# ---------- right now ----------
+
+def status(config_path: str | None = None, calendars: list[str] | None = None, timezone: str | None = None,
+           *, min_minutes: int | None = None, reader: sources.Reader | None = None) -> dict:
+    """Free or busy now, until when, and the next slot. For status bars, phones and smart homes. No titles."""
+    cfg = _settings(config_path)
+    tz = _timezone(timezone, cfg)
+    now = settings.now(tz)
+    opens, closes = _hours(cfg.hours)
+    minutes = min_minutes if min_minutes is not None else cfg.min_minutes
+    if minutes < 1:
+        raise Problem("min_minutes must be at least 1")
+    busy, notes, _ = _load_busy(_calendars(calendars, cfg), tz, now.date(), now.date() + dt.timedelta(days=14),
+                                cfg, cfg.all_day_busy, reader)
+    result = standing.status(busy, now, tz, opens, closes, buffer_minutes=cfg.buffer_minutes, min_minutes=minutes,
+                             weekends=cfg.weekends)
+    return {"timezone": tz.key, "min_minutes": minutes, **result, "notes": notes}
 
 
 # ---------- checking and adding calendars ----------
