@@ -120,3 +120,17 @@ def test_the_token_is_made_once_and_kept_private(tmp_path, monkeypatch):
     assert server.load_token(cfg)[0] == first
     monkeypatch.setenv("WHENFREE_TOKEN", "from-env")
     assert server.load_token(cfg) == ("from-env", "WHENFREE_TOKEN")
+
+
+def test_on_another_address_the_token_alone_protects_it(tmp_path, monkeypatch):
+    # Open WebUI in Docker calls host.docker.internal; that is only possible when listening beyond loopback.
+    monkeypatch.setenv("WHENFREE_CONFIG", str(tmp_path / "none.toml"))
+    srv = server.make_server(host="0.0.0.0", port=0, token=TOKEN)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        local = f"http://127.0.0.1:{srv.server_address[1]}"
+        assert ask(local, "/health", token=None, headers={"Host": "host.docker.internal:8765"})[0] == 200
+        assert ask(local, "/check_calendars", {}, token=None, headers={"Host": "host.docker.internal"})[0] == 401
+    finally:
+        srv.shutdown()
+        srv.server_close()

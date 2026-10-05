@@ -3,9 +3,12 @@
 **Someone asks when you're free. This reads your calendar and gives you the answer, ready to paste.**
 
 [![tests](https://github.com/YauhenBichel/when-free/actions/workflows/tests.yml/badge.svg)](https://github.com/YauhenBichel/when-free/actions/workflows/tests.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![PyPI](https://img.shields.io/pypi/v/when-free.svg)](https://pypi.org/project/when-free/)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](https://github.com/YauhenBichel/when-free/blob/main/LICENSE)
 
-![A recruiter's message goes in; the free slots on those days come out](docs/demo.gif)
+<!-- mcp-name: io.github.YauhenBichel/when-free -->
+
+![A recruiter's message goes in; the free slots on those days come out](https://raw.githubusercontent.com/YauhenBichel/when-free/main/docs/demo.gif)
 
 - **Paste the message, get the slots.** It reads "Tuesday or Wednesday next week, between 10am and 4pm" and answers for exactly those days and hours.
 - **Works with Google, Outlook and iCloud** calendars, or any `.ics` file. Several calendars at once.
@@ -18,12 +21,20 @@
 
 ## Try it in a minute
 
-You need Python 3.11 or newer and [uv](https://docs.astral.sh/uv/) (or pipx).
+With [uv](https://docs.astral.sh/uv/), nothing to install first:
 
 ```bash
-uv tool install git+https://github.com/YauhenBichel/when-free     # or: pipx install git+https://github.com/YauhenBichel/when-free
+uvx when-free demo
+```
+
+To keep it (needs Python 3.11 or newer):
+
+```bash
+uv tool install when-free          # or: pipx install when-free
 whenfree demo
 ```
+
+Using Claude Desktop? You can skip all of this: install the [one-click extension](https://github.com/YauhenBichel/when-free/blob/main/docs/recipes.md#claude-desktop-in-one-click).
 
 `whenfree demo` makes up a calendar for next week and answers a recruiter's message from it. It reads none of your data and saves nothing:
 
@@ -153,7 +164,9 @@ Every way gives the same answer, only reads, and leaves event titles out unless 
 
 | Your tool | Use | Set up |
 |---|---|---|
-| Claude Code, Claude Desktop, Cursor, VS Code, any MCP client | [MCP server](#mcp-claude-cursor-and-other-assistants) | one line |
+| Claude Desktop | [One-click extension](https://github.com/YauhenBichel/when-free/blob/main/docs/recipes.md#claude-desktop-in-one-click) | double-click |
+| Claude Code, Cursor, VS Code, any MCP client | [MCP server](#mcp-claude-cursor-and-other-assistants) | one line |
+| Raycast, a right-click on a message (macOS) | [Recipes](https://github.com/YauhenBichel/when-free/blob/main/docs/recipes.md) | a few minutes |
 | Open WebUI, n8n, Shortcuts, Raycast, anything that calls a URL | [Local HTTP server](#http-open-webui-n8n-shortcuts-and-scripts) | `whenfree serve` |
 | Your own agent with function calling | [Schema and call](#function-calling-harnesses) | two commands |
 | Python | [The library](#python) | `import whenfree` |
@@ -161,18 +174,20 @@ Every way gives the same answer, only reads, and leaves event titles out unless 
 ### MCP: Claude, Cursor and other assistants
 
 ```bash
-claude mcp add when-free -- whenfree mcp          # Claude Code
+claude mcp add when-free -- uvx when-free mcp          # Claude Code
 ```
 
-For Claude Desktop, Cursor and other MCP clients, add this to their server list:
+For Cursor and other MCP clients, add this to their server list. `uvx` fetches when-free the first time, so there's nothing to install:
 
 ```json
 {
   "mcpServers": {
-    "when-free": { "command": "whenfree", "args": ["mcp"] }
+    "when-free": { "command": "uvx", "args": ["when-free", "mcp"] }
   }
 }
 ```
+
+If you installed it with `uv tool install`, use `"command": "whenfree", "args": ["mcp"]` instead. It's also listed in the [MCP registry](https://registry.modelcontextprotocol.io) as `io.github.YauhenBichel/when-free`.
 
 Then just ask: *"Here's the recruiter's message. Which of those times can I do?"* The assistant calls `free_slots` and answers from your real calendar.
 
@@ -196,9 +211,9 @@ curl -H "Authorization: Bearer $(cat ~/.config/when-free/token)" \
 
 - `POST /free_slots` with a JSON body, or `GET` with a query string. Same for `/check_calendars`.
 - The answer is `{"ok": true, "text": "...", "data": {...}}`, or `{"ok": false, "error": "..."}` with status 400.
-- **OpenAPI** description at `/openapi.json`. In Open WebUI, add `http://127.0.0.1:8765` as an OpenAPI tool server, with the token as the bearer key.
+- **OpenAPI** description at `/openapi.json`. To set up Open WebUI, n8n or Shortcuts, see the [recipes](https://github.com/YauhenBichel/when-free/blob/main/docs/recipes.md).
 - **The token** is created on first run and kept in `~/.config/when-free/token`, readable only by you. Or set your own with `WHENFREE_TOKEN`. Every tool call needs it.
-- Requests addressed to any host other than this computer are refused. A web page may call it only from an origin you allow: `whenfree serve --allow-origin http://localhost:3000`.
+- Requests addressed to any host other than this computer are refused. A web page may call it only from an origin you allow: `whenfree serve --allow-origin http://localhost:3000`. With `--host 0.0.0.0` it's reachable from your network, and the token alone protects it, so use that only on a network you trust.
 
 ### Function-calling harnesses
 
@@ -315,7 +330,7 @@ The tests use a small calendar in `tests/data/sample.ics` and a fixed clock (`WH
 | `tools` | The tools offered to agents: one registry entry each |
 | `cli`, `mcp`, `server`, `demo` | The front ends |
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](https://github.com/YauhenBichel/when-free/blob/main/CONTRIBUTING.md).
 
 ## Licence
 

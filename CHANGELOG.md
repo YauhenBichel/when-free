@@ -1,8 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 (2026-10-05)
 
-Setting up a calendar without editing a file, and messages that say "next week".
+Easier to start and to reach from other tools: on PyPI, a Claude Desktop extension, a local HTTP server,
+a demo, and messages that say "next week".
+
+- On PyPI: `uvx when-free demo` runs it with nothing installed, and `uv tool install when-free` keeps it.
+  The package also installs a `when-free` command, so MCP clients can start it with `uvx when-free mcp`.
+- `when-free.mcpb`, a Claude Desktop extension, is attached to each release. Claude Desktop provides Python,
+  and asks for the calendar address as a sensitive setting kept in the system's secure storage.
+- Listed in the MCP registry as `io.github.YauhenBichel/when-free` (`server.json`, published by the release
+  workflow with GitHub OIDC).
+- Recipes for Raycast (two script commands in `integrations/raycast`), a macOS right-click Quick Action,
+  Open WebUI, n8n, Shortcuts, and starting the server at login: `docs/recipes.md`.
 
 - A message, `--days` and the `days` tool argument now understand days relative to today when no explicit date
   is given: "today", "tomorrow", "Thursday" (the coming one), "this Tuesday", "next Tuesday" (of next week),
@@ -17,7 +27,7 @@ Setting up a calendar without editing a file, and messages that say "next week".
 - `whenfree serve`: a local HTTP server for tools that cannot start a command (Open WebUI, n8n, Shortcuts,
   Raycast, scripts). `POST /free_slots` and `/check_calendars` with JSON, or `GET` with a query string; an
   OpenAPI 3.1 description at `/openapi.json`. It listens on 127.0.0.1, every tool call needs a token (kept
-  next to the settings file, readable only by you, or `WHENFREE_TOKEN`), requests addressed to another host
+  next to the settings file, readable only by you, or `WHENFREE_TOKEN`), requests addressed to another host (when on 127.0.0.1)
   are refused, and a web page may call it only from an origin given with `--allow-origin`.
 
 - `whenfree add` asks for a calendar's private address at a prompt that does not show it (or reads it from
