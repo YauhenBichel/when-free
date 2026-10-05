@@ -8,9 +8,9 @@ import os
 import pathlib
 import sys
 
-from . import __version__, api, config as settings, mcp, tools
+from . import __version__, api, config as settings, mcp, server, tools
 
-COMMANDS = ("slots", "add", "init", "check", "mcp", "schema", "call")
+COMMANDS = ("slots", "add", "init", "check", "mcp", "serve", "schema", "call")
 
 
 def cmd_slots(args) -> int:
@@ -100,6 +100,10 @@ def cmd_mcp(args) -> int:
     return mcp.serve(config_path=args.config)
 
 
+def cmd_serve(args) -> int:
+    return server.serve(args.host, args.port, config_path=args.config, origins=args.allow_origin)
+
+
 def cmd_schema(args) -> int:
     print(json.dumps(tools.openai_schema() if args.format == "openai" else tools.TOOLS, indent=2, ensure_ascii=False))
     return 0
@@ -165,6 +169,16 @@ def _parser() -> argparse.ArgumentParser:
                        description="An MCP server for assistants and agents. It offers two tools: free_slots and check_calendars.")
     m.add_argument("--config", metavar="FILE")
 
+    sv = sub.add_parser("serve", help="run a local HTTP server with an OpenAPI description, for tools that cannot start a command",
+                        description="A local HTTP server: POST /free_slots and /check_calendars with JSON, or GET with a query "
+                                    "string. The OpenAPI description is at /openapi.json. Every tool call needs the token, "
+                                    "kept next to the settings file or taken from WHENFREE_TOKEN.")
+    sv.add_argument("--port", type=int, default=server.PORT, help=f"default {server.PORT}")
+    sv.add_argument("--host", default="127.0.0.1", help="default 127.0.0.1: this machine only")
+    sv.add_argument("--allow-origin", action="append", metavar="ORIGIN", default=[],
+                    help="let a web page from this origin call it, like http://localhost:3000; repeatable")
+    sv.add_argument("--config", metavar="FILE")
+
     sc = sub.add_parser("schema", help="print the tool definitions for a function-calling harness")
     sc.add_argument("--format", choices=("mcp", "openai"), default="mcp", help="mcp: name, description, inputSchema. openai: type function, parameters")
 
@@ -181,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     if not argv or (argv[0] not in COMMANDS and argv[0] not in ("-h", "--help", "--version")):
         argv = ["slots"] + argv
     args = _parser().parse_args(argv)
-    handlers = {"slots": cmd_slots, "add": cmd_add, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp, "schema": cmd_schema, "call": cmd_call}
+    handlers = {"slots": cmd_slots, "add": cmd_add, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp, "serve": cmd_serve, "schema": cmd_schema, "call": cmd_call}
     try:
         return handlers[args.command](args)
     except (api.Problem, settings.ConfigError, ValueError) as e:
