@@ -17,7 +17,7 @@ _FREE_SLOTS = {
         "the time ranges with no events, in the user's time zone. Use it when the user needs to offer, choose "
         "or confirm times for a meeting, call or interview. "
         "Say which days in one of three ways: `days` (explicit dates), `from` and `to` (a range), or `message` "
-        "(text such as a recruiter's email, from which explicit dates and a daily window are read). With none "
+        "(text such as a recruiter's email, from which the days and a daily window are read). With none "
         "of them, the next working days are returned. "
         "It never guesses: if a calendar cannot be read it returns an error instead of slots, and days already "
         "past are listed under `past`. It only reads. It cannot create or change events."
@@ -25,11 +25,11 @@ _FREE_SLOTS = {
     "inputSchema": {
         "type": "object",
         "properties": {
-            "days": {"type": "string", "description": "Specific days, comma-separated. ISO dates are safest: \"2026-10-05, 2026-10-06\". Also understood: \"Thu 1 Oct, Fri 2 Oct\"."},
+            "days": {"type": "string", "description": "Specific days, comma-separated. ISO dates are safest: \"2026-10-05, 2026-10-06\". Also understood: \"Thu 1 Oct, Fri 2 Oct\", \"tomorrow\", \"next week\"."},
             "from": {"type": "string", "description": "First day of a range, YYYY-MM-DD. Default: today."},
             "to": {"type": "string", "description": "Last day of a range, YYYY-MM-DD."},
-            "message": {"type": "string", "description": "Text to read the proposed days and hours from, for example the email asking for availability. Only explicit dates are read, not phrases like \"next week\"."},
-            "hours": {"type": "string", "description": "The part of the day to offer, HH:MM-HH:MM, for example \"10:00-16:00\". Default: the user's configured hours."},
+            "message": {"type": "string", "description": "Text to read the proposed days and hours from, for example the email asking for availability. Explicit dates are read, and when there are none, phrases relative to today: \"tomorrow\", \"Thursday\", \"next Tuesday\", \"next week\", \"any afternoon\"."},
+            "hours": {"type": "string", "description": "The part of the day to offer, HH:MM-HH:MM, for example \"10:00-16:00\", or \"morning\", \"afternoon\", \"evening\". Default: the user's configured hours."},
             "min_minutes": {"type": "integer", "minimum": 1, "description": "Shortest slot to return, in minutes. Set it to the meeting length. Default: the user's setting, usually 60."},
             "buffer_minutes": {"type": "integer", "minimum": 0, "description": "Time kept free before and after every event. Default: the user's setting, usually 15."},
             "timezone": {"type": "string", "description": "Time zone for the answer, like \"Europe/London\". Default: the user's zone."},

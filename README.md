@@ -109,6 +109,7 @@ Settings: /Users/you/.config/when-free/config.toml   time zone: Europe/London
 whenfree                                              # the next 7 working days
 whenfree --from 2026-10-05 --to 2026-10-09            # a range
 whenfree --days "Thu 1 Oct, Fri 2 Oct, Mon 5 Oct"     # specific days
+whenfree --days "next week" --hours afternoon         # in words
 whenfree --hours 10:00-16:00 --min 90                 # only 90-minute slots, in part of the day
 whenfree --message invite.txt                         # days and hours from a message saved to a file
 pbpaste | whenfree --message -                        # the same, from the clipboard (macOS)
@@ -127,7 +128,20 @@ and hours such as `between 10:00am and 4:00pm`, `10:00–16:00`, `9-5pm`, `2 to 
 
 A bare "Wednesday 30th" is read as the date nearest to today that is both a Wednesday and a 30th, so a message from last week resolves to last week. Days already past are left out of the answer and named on standard error, never dropped silently.
 
-It does not read "next week" or "any afternoon". For those, give the days yourself with `--days` or `--from` and `--to`. It always says how the dates were read, because you should check them against the message before you reply.
+When a message names no explicit date, it reads days relative to today:
+
+| Written | Read as (today is Thursday 1 Oct) |
+|---|---|
+| `today`, `tomorrow`, `the day after tomorrow` | Thu 1, Fri 2, Sat 3 Oct |
+| `Thursday or Friday` | the coming ones, today included: Thu 1, Fri 2 Oct |
+| `this Tuesday` · `next Tuesday` | Tuesday of this week (already past, so named and left out) · of next week, Tue 6 Oct |
+| `next week` · `the week after next` · `this week` | that week's working days, from today on |
+| `Tuesday or Wednesday next week` | Tue 6, Wed 7 Oct |
+| `any afternoon` · `Friday morning` · `evening` | 12:00–17:00 · 09:00–12:00 · 17:00–20:00, unless hours are given |
+
+Explicit dates win: a heading like "Next week:" above "Wednesday 30th, Thursday 1st" does not add a whole week. "Good morning" is a greeting, not a time. Relative days count from the day you run it, so for an older message give the days yourself with `--days` or `--from` and `--to`. `--days` and `--hours` understand the same words: `whenfree --days "next week" --hours afternoon`.
+
+It always says how the dates were read, because you should check them against the message before you reply.
 
 when-free does not connect to your mailbox. You paste the message, pipe it in, or save it to a file.
 
