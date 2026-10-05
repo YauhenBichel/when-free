@@ -235,7 +235,20 @@ All optional except a calendar. Command-line flags win over the file.
 | `[[calendar]]` | | `--calendar` | `name` and `url` or `path`. One block per calendar; `whenfree add` writes them |
 | `[extract] command` | none | `--no-extract` | A command that reads a message with your own model |
 
-Environment variables, for scripts and containers: `WHENFREE_CONFIG` (path to the settings file), `WHENFREE_CALENDARS` (comma-separated addresses or paths, replacing the file's list), `WHENFREE_TZ`.
+### Environment variables
+
+For scripts, containers and MCP client configurations. All optional.
+
+| Variable | Meaning |
+|---|---|
+| `WHENFREE_CALENDARS` | Comma-separated calendar addresses or paths. Replaces the file's list. **Sensitive**: see below |
+| `WHENFREE_CONFIG` | Path to the settings file |
+| `XDG_CONFIG_HOME` | Where the settings file is looked for when `WHENFREE_CONFIG` is not set: `$XDG_CONFIG_HOME/when-free/config.toml`, otherwise `~/.config/when-free/config.toml` |
+| `WHENFREE_TZ` | The zone the answer is given in. Wins over `timezone` in the file |
+| `TZ` | Your system's zone, used when neither of the above gives one |
+| `WHENFREE_NOW` | An ISO date-time to use as "now", so that a run can be reproduced |
+
+**`WHENFREE_CALENDARS` holds passwords.** A private calendar address lets anyone who has it read that calendar (see [If it does not work](#if-it-does-not-work)). Treat the variable like an API key: keep it out of shared shell profiles, committed MCP configurations, CI logs and screenshots. The settings file `whenfree add` writes is readable only by you, so prefer it to the variable where you can.
 
 ## Limits, stated plainly
 
