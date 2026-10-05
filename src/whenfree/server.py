@@ -19,7 +19,8 @@ import sys
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import __version__, api, config as settings, tools
+from . import __version__, api, tools
+from . import config as settings
 
 PORT = 8765
 MAX_BODY = 64 * 1024
@@ -81,22 +82,6 @@ def openapi(base_url: str) -> dict:
     }
 
 
-def _from_query(tool: dict, query: str) -> dict:
-    """GET /free_slots?days=tomorrow&min_minutes=30: query strings are text, so convert by the schema."""
-    props, out = tool["inputSchema"]["properties"], {}
-    for key, value in urllib.parse.parse_qsl(query, keep_blank_values=True):
-        kind = props.get(key, {}).get("type")
-        if kind == "integer":
-            try:
-                value = int(value)
-            except ValueError:
-                pass                                   # left as text, so the tool says what is wrong
-        elif kind == "boolean":
-            value = value.lower() in ("1", "true", "yes", "on", "")
-        out[key] = value
-    return out
-
-
 def make_handler(token: str, config_path: str | None, origins: list[str], base_url: str):
     class Handler(BaseHTTPRequestHandler):
         server_version = f"when-free/{__version__}"
@@ -140,13 +125,13 @@ def make_handler(token: str, config_path: str | None, origins: list[str], base_u
                                         "openapi": f"{base_url}/openapi.json"})
             if name == "openapi.json":
                 return self._send(200, openapi(base_url))
-            tool = next((t for t in tools.TOOLS if t["name"] == name), None)
+            tool = tools.REGISTRY.get(name)
             if tool is None:
-                return self._send(404, {"ok": False, "error": f"no such path. Tools: {', '.join('/' + t['name'] for t in tools.TOOLS)}"})
+                return self._send(404, {"ok": False, "error": f"no such path. Tools: {', '.join('/' + t for t in tools.REGISTRY)}"})
             if not self._authorised():
                 return self._send(401, {"ok": False, "error": "send the token as: Authorization: Bearer <token>"},
                                   {"WWW-Authenticate": "Bearer"})
-            arguments = body if body is not None else _from_query(tool, url.query)
+            arguments = body if body is not None else tool.coerce(urllib.parse.parse_qsl(url.query, keep_blank_values=True))
             try:
                 text, data = tools.call(name, arguments, config_path=config_path)
             except api.Problem as e:
