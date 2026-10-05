@@ -8,7 +8,7 @@ import os
 import pathlib
 import sys
 
-from . import __version__, api, mcp, render, server, sources, tools
+from . import __version__, api, demo, mcp, render, server, sources, tools
 from . import config as settings
 
 
@@ -87,6 +87,11 @@ def cmd_check(args) -> int:
     return 0
 
 
+def cmd_demo(args) -> int:
+    print(demo.run(args.tz))
+    return 0
+
+
 def cmd_mcp(args) -> int:
     return mcp.serve(config_path=args.config)
 
@@ -117,7 +122,7 @@ def cmd_call(args) -> int:
     return 0
 
 
-COMMANDS = {"slots": cmd_slots, "add": cmd_add, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp,
+COMMANDS = {"slots": cmd_slots, "demo": cmd_demo, "add": cmd_add, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp,
             "serve": cmd_serve, "schema": cmd_schema, "call": cmd_call}
 
 
@@ -143,6 +148,11 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--no-extract", action="store_true", help="do not run the [extract] command; read dates by pattern matching")
     s.add_argument("--calendar", action="append", metavar="ADDRESS_OR_FILE", help="use this calendar instead of the configured ones; repeatable")
     s.add_argument("--config", metavar="FILE", help="settings file (default: ~/.config/when-free/config.toml)")
+
+    d = sub.add_parser("demo", help="see what it does with a made-up calendar, before adding yours",
+                       description="Answers a recruiter's message from a made-up calendar for next week. "
+                                   "Reads no settings, fetches nothing, saves nothing.")
+    d.add_argument("--tz", metavar="ZONE", help="time zone (default: yours)")
 
     a = sub.add_parser("add", help="add a calendar: asks for its address, checks it and saves it",
                        description="Add a calendar to the settings file. Without FILE it asks for the calendar's private "
