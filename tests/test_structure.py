@@ -56,3 +56,13 @@ def test_query_strings_are_converted_by_the_schema():
     assert tool.coerce([("min_minutes", "30"), ("weekends", "true"), ("include_busy", ""), ("days", "tomorrow")]) == \
         {"min_minutes": 30, "weekends": True, "include_busy": True, "days": "tomorrow"}
     assert tool.coerce([("min_minutes", "lots")]) == {"min_minutes": "lots"}       # left for validate to explain
+
+
+def test_the_demo_needs_no_calendar_and_no_settings(capsys, monkeypatch):
+    from whenfree import cli
+    monkeypatch.setenv("WHENFREE_CALENDARS", "/no/such/calendar.ics")      # ignored: the demo brings its own
+    assert cli.main(["demo", "--tz", "Europe/London"]) == 0
+    out = capsys.readouterr().out
+    assert "Lunch with Sam" in out and "whenfree add" in out
+    days = [line for line in out.splitlines() if line.startswith("  - ")]
+    assert [d.split(":")[0].split()[1] for d in days] == ["Tue", "Wed", "Thu"]

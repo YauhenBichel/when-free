@@ -10,6 +10,10 @@ Setting up a calendar without editing a file, and messages that say "next week".
   so a "Next week:" heading over dated lines adds nothing.
 - "morning", "afternoon" and "evening" give the hours (09:00–12:00, 12:00–17:00, 17:00–20:00) when none are
   stated, in a message or in `--hours`. "Good morning" is a greeting and is ignored.
+- `whenfree demo` answers a recruiter's message from a made-up calendar for next week, in your time zone, so
+  you can see what it does before adding a calendar. It reads no settings, fetches nothing and saves nothing.
+- The README starts with a demo GIF, a one-minute try, and three steps to add a calendar; tools are chosen
+  from one table; troubleshooting and reference are folded away.
 - `whenfree serve`: a local HTTP server for tools that cannot start a command (Open WebUI, n8n, Shortcuts,
   Raycast, scripts). `POST /free_slots` and `/check_calendars` with JSON, or `GET` with a query string; an
   OpenAPI 3.1 description at `/openapi.json`. It listens on 127.0.0.1, every tool call needs a token (kept
