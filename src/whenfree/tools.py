@@ -1,14 +1,20 @@
-"""The tools an agent can call, described once and used three ways.
+"""The tools an agent can call, described once and offered four ways.
 
 - the MCP server (`whenfree mcp`) lists and runs them
 - `whenfree schema` prints them for function-calling harnesses (MCP shape or OpenAI shape)
 - `whenfree call NAME` runs one from a shell, JSON in and JSON out
+- `whenfree serve` offers them over local HTTP
+
+Adding a tool is one entry in REGISTRY: its description for the model and the function that runs it.
 
 Event titles are private. A tool leaves them out unless the caller asks with `include_busy`.
 """
 from __future__ import annotations
 
-from . import api
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from . import api, render
 
 _FREE_SLOTS = {
     "name": "free_slots",
@@ -49,37 +55,53 @@ _CHECK = {
     "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
 }
 
-TOOLS = [_FREE_SLOTS, _CHECK]
 _TYPES = {"string": str, "integer": int, "boolean": bool}
 
 
-def _validate(tool: dict, arguments: dict) -> None:
-    if not isinstance(arguments, dict):
-        raise api.Problem("arguments must be an object")
-    props = tool["inputSchema"]["properties"]
-    for key, value in arguments.items():
-        if key not in props:
-            raise api.Problem(f"unknown argument {key!r} for {tool['name']}. Known: {', '.join(props) or 'none'}")
-        kind = _TYPES[props[key]["type"]]
-        if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
-            raise api.Problem(f"argument {key!r} should be {props[key]['type']}")
+@dataclass(frozen=True)
+class Tool:
+    """A tool: what it is called, how it is described to a model, and what runs it."""
+    spec: dict
+    run: Callable[[dict, str | None], tuple[str, dict]]       # (arguments, settings path) -> (text, data)
+
+    @property
+    def name(self) -> str:
+        return self.spec["name"]
+
+    @property
+    def properties(self) -> dict:
+        return self.spec["inputSchema"]["properties"]
+
+    def validate(self, arguments: dict) -> None:
+        if not isinstance(arguments, dict):
+            raise api.Problem("arguments must be an object")
+        for key, value in arguments.items():
+            if key not in self.properties:
+                raise api.Problem(f"unknown argument {key!r} for {self.name}. Known: {', '.join(self.properties) or 'none'}")
+            kind = _TYPES[self.properties[key]["type"]]
+            if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
+                raise api.Problem(f"argument {key!r} should be {self.properties[key]['type']}")
+
+    def coerce(self, pairs: list[tuple[str, str]]) -> dict:
+        """Arguments that arrived as text (a query string) converted by the schema. Bad values stay text,
+        so that `validate` says what is wrong."""
+        out: dict = {}
+        for key, value in pairs:
+            kind = self.properties.get(key, {}).get("type")
+            if kind == "integer":
+                try:
+                    out[key] = int(value)
+                    continue
+                except ValueError:
+                    pass
+            elif kind == "boolean":
+                out[key] = value.lower() in ("1", "true", "yes", "on", "")
+                continue
+            out[key] = value
+        return out
 
 
-def call(name: str, arguments: dict | None = None, *, config_path: str | None = None) -> tuple[str, dict]:
-    """Run a tool. Returns (text for a person or a model to read, the same answer as data). Raises api.Problem."""
-    arguments = arguments or {}
-    tool = next((t for t in TOOLS if t["name"] == name), None)
-    if tool is None:
-        raise api.Problem(f"unknown tool {name!r}. Known: {', '.join(t['name'] for t in TOOLS)}")
-    _validate(tool, arguments)
-
-    if name == "check_calendars":
-        data = api.check_calendars(config_path=config_path)
-        text = "\n".join([f"Time zone: {data['timezone']}"] + [
-            f"ok  {c['name']}: {c['events']} events, {c['blocking_next_14_days']} block time in the next 14 days"
-            for c in data["calendars"]])
-        return text, data
-
+def _run_free_slots(arguments: dict, config_path: str | None) -> tuple[str, dict]:
     show_busy = bool(arguments.get("include_busy"))
     result = api.find_free(api.Query(
         days=arguments.get("days"), start=arguments.get("from"), end=arguments.get("to"),
@@ -90,16 +112,31 @@ def call(name: str, arguments: dict | None = None, *, config_path: str | None = 
     if not show_busy:
         for day in result["days"]:
             del day["busy"]
-    head = (f"Free between {result['hours'][0]} and {result['hours'][1]} ({result['timezone']}), "
-            f"slots of {result['min_minutes']}+ minutes, {result['buffer_minutes']}-minute buffer around events:")
-    body = api.lines(result, busy=show_busy)
-    tail = []
-    if result["read_by"]:
-        tail.append(f"Dates and hours were read from the message by {result['read_by']}. Check them against the message.")
-    if result["past"]:
-        tail.append("Left out, already past: " + ", ".join(result["past"]) + ".")
-    tail += [f"Note: {n}" for n in result["notes"]]
-    return "\n".join([head, ""] + body + ([""] + tail if tail else [])), result
+    return render.answer(result, busy=show_busy), result
+
+
+def _run_check(arguments: dict, config_path: str | None) -> tuple[str, dict]:
+    data = api.check_calendars(config_path=config_path)
+    return "\n".join([f"Time zone: {data['timezone']}"] + render.calendars_checked(data)), data
+
+
+REGISTRY: dict[str, Tool] = {t.name: t for t in (Tool(_FREE_SLOTS, _run_free_slots), Tool(_CHECK, _run_check))}
+TOOLS = [t.spec for t in REGISTRY.values()]
+
+
+def get(name: str) -> Tool:
+    tool = REGISTRY.get(name)
+    if tool is None:
+        raise api.Problem(f"unknown tool {name!r}. Known: {', '.join(REGISTRY)}")
+    return tool
+
+
+def call(name: str, arguments: dict | None = None, *, config_path: str | None = None) -> tuple[str, dict]:
+    """Run a tool. Returns (text for a person or a model to read, the same answer as data). Raises api.Problem."""
+    tool = get(name)
+    arguments = arguments or {}
+    tool.validate(arguments)
+    return tool.run(arguments, config_path)
 
 
 def openai_schema() -> list[dict]:

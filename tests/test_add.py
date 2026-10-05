@@ -6,7 +6,7 @@ import urllib.error
 
 import pytest
 
-from whenfree import api, cli, config
+from whenfree import api, cli, config, sources
 
 SAMPLE = str(pathlib.Path(__file__).parent / "data" / "sample.ics")
 SECRET = "https://calendar.google.com/calendar/ical/me%40example.com/private-SECRET-TOKEN/basic.ics"
@@ -23,7 +23,7 @@ def fixed_world(tmp_path, monkeypatch):
 @pytest.fixture
 def online(monkeypatch):
     """Every address answers with the sample calendar; nothing touches the network."""
-    monkeypatch.setattr(api, "_read", lambda source: pathlib.Path(SAMPLE).read_text())
+    monkeypatch.setattr(sources, "read", lambda source: pathlib.Path(SAMPLE).read_text())
 
 
 def run(capsys, *argv):
@@ -124,7 +124,7 @@ def test_other_settings_and_tables_are_left_as_they_are(tmp_path):
 def refuse(monkeypatch, code):
     def read(source):
         raise urllib.error.HTTPError("https://hidden", code, {404: "Not Found", 500: "Server Error"}[code], None, None)
-    monkeypatch.setattr(api, "_read", read)
+    monkeypatch.setattr(sources, "read", read)
 
 
 def test_googles_public_address_is_named_as_the_mistake(capsys, monkeypatch):
@@ -143,7 +143,7 @@ def test_a_refused_address_is_probably_incomplete_but_a_server_fault_is_not(caps
 
 
 def test_a_web_page_is_not_a_calendar(capsys, monkeypatch):
-    monkeypatch.setattr(api, "_read", lambda source: "<!DOCTYPE html>\n<html><body>Sign in</body></html>")
+    monkeypatch.setattr(sources, "read", lambda source: "<!DOCTYPE html>\n<html><body>Sign in</body></html>")
     code, _, err = run(capsys, "check", "--calendar", SECRET)
     assert code == 1 and "returned a web page" in err and ".ics" in err
 

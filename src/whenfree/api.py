@@ -1,4 +1,4 @@
-"""The one function everything else calls: the command line, the MCP server, and your own code.
+"""The one function everything else calls: the command line, the MCP server, the HTTP server, and your own code.
 
     from whenfree import api
     result = api.find_free(api.Query(days="Thu 1 Oct, Fri 2 Oct", hours="10:00-16:00"))
@@ -8,19 +8,22 @@
 `find_free` returns plain data (dicts, lists, strings), so it can be turned into JSON as it is.
 It raises `Problem` for anything the caller can fix: no calendar configured, a calendar that cannot be read,
 dates that cannot be understood. It never returns slots when a calendar failed to load.
+
+How it answers, step by step: resolve the settings (`_plan`), choose the days (one strategy per way of asking),
+read the busy time from every calendar (`sources`), then work out each day (`slots`).
 """
 from __future__ import annotations
 
 import datetime as dt
-import pathlib
-import urllib.error
-import urllib.request
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from zoneinfo import ZoneInfo
 
-from . import __version__, config as settings, dates, extract, ical, slots
-
-DAY = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+from . import config as settings
+from . import dates, extract, ical, slots, sources
+from .errors import Problem
+from .render import label, lines  # noqa: F401  (kept here for existing callers)
+from .sources import NO_SLOTS, URL  # noqa: F401
 
 SETUP_HINT = """No calendar is configured.
 
@@ -31,21 +34,14 @@ Or try it once without a settings file:
 
   whenfree --calendar ~/Downloads/calendar.ics"""
 
-URL = ("http://", "https://", "webcal://")
-NO_SLOTS = "No slots were printed, because without it busy time would look free."
-
-
-class Problem(Exception):
-    """Something the caller can fix. Its text is safe to show: it never contains a calendar address."""
-
 
 @dataclass
 class Query:
-    days: str | None = None             # "Thu 1 Oct, Fri 2 Oct" or "2026-10-05, 2026-10-06"
+    days: str | None = None             # "Thu 1 Oct, Fri 2 Oct", "2026-10-05, 2026-10-06" or "next week"
     start: str | None = None            # first day of a range, YYYY-MM-DD (default: today)
     end: str | None = None              # last day of a range, YYYY-MM-DD
     message: str | None = None          # text to read the proposed days and hours from
-    hours: str | None = None            # "10:00-16:00"
+    hours: str | None = None            # "10:00-16:00" or "afternoon"
     min_minutes: int | None = None
     buffer_minutes: int | None = None
     timezone: str | None = None
@@ -56,52 +52,16 @@ class Query:
     use_extract: bool = True            # run the [extract] command if one is configured
 
 
-def _read(source: str) -> str:
-    if source.startswith(URL):
-        url = "https://" + source[len("webcal://"):] if source.startswith("webcal://") else source
-        req = urllib.request.Request(url, headers={"User-Agent": f"when-free/{__version__}"})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            return r.read().decode("utf-8", "replace")
-    return pathlib.Path(source).expanduser().read_text(encoding="utf-8", errors="replace")
+# ---------- settings ----------
+
+def _settings(path: str | None) -> settings.Config:
+    try:
+        return settings.load(path)
+    except settings.ConfigError as e:
+        raise Problem(str(e)) from None
 
 
-def _calendars(given: list[str] | None, cfg: settings.Config) -> list[settings.Calendar]:
-    if given:
-        return [settings.Calendar(f"calendar {i}", s) for i, s in enumerate(given, 1)]
-    return cfg.calendars
-
-
-def _hint(source: str, error: Exception) -> str:
-    """What to try when an address is refused. It is built from the shape of the address and never quotes it."""
-    if not source.startswith(URL) or not isinstance(error, urllib.error.HTTPError) or not 400 <= error.code < 500:
-        return ""
-    if "calendar.google.com" in source and "/public/" in source:
-        return (" This is the calendar's public address, which works only for a calendar made public."
-                " Copy \"Secret address in iCal format\" instead.")
-    return " Copy the address again from the calendar's settings: part of it may be missing."
-
-
-def _load(calendars: list[settings.Calendar], tz, consequence: str = NO_SLOTS) -> list[tuple[str, list[ical.Event]]]:
-    """Every calendar or none: a calendar that silently fails to load would make busy time look free."""
-    out = []
-    for cal in calendars:
-        try:
-            text = _read(cal.source)
-        except (OSError, urllib.error.URLError, ValueError) as e:
-            # The address is a secret; name the calendar, never print where it lives.
-            reason = getattr(e, "reason", None) or getattr(e, "strerror", None) or e.__class__.__name__
-            raise Problem(f"could not read the calendar '{cal.name}' ({reason}). {consequence}"
-                          f"{_hint(cal.source, e)}") from None
-        if "BEGIN:VCALENDAR" not in text:
-            if text.lstrip()[:200].lower().startswith(("<!doctype html", "<html")):
-                raise Problem(f"the calendar '{cal.name}' returned a web page, not a calendar; "
-                              "use the address that ends in .ics")
-            raise Problem(f"the calendar '{cal.name}' did not return iCalendar data; check its address")
-        out.append((cal.name, ical.parse(text, tz)))
-    return out
-
-
-def _timezone(name: str | None, cfg: settings.Config):
+def _timezone(name: str | None, cfg: settings.Config) -> ZoneInfo:
     name = name or cfg.timezone or settings.system_timezone()
     try:
         return ZoneInfo(name)
@@ -109,137 +69,175 @@ def _timezone(name: str | None, cfg: settings.Config):
         raise Problem(f"unknown time zone {name!r}; use a name like Europe/London") from None
 
 
-def _working_days(start: dt.date, count: int, weekends: bool) -> list[dt.date]:
-    days, d = [], start
-    while len(days) < count:
-        if weekends or d.weekday() < 5:
-            days.append(d)
-        d += dt.timedelta(days=1)
-    return days
-
-
-def label(d: dt.date) -> str:
-    return f"{DAY[d.weekday()]} {d.day} {d.strftime('%b')}"
-
-
-def find_free(q: Query) -> dict:
-    """Free slots for the days asked about. See the module docstring for the shape of the answer."""
+def _hours(value: str) -> tuple[dt.time, dt.time]:
     try:
-        cfg = settings.load(q.config_path)
-    except settings.ConfigError as e:
+        return dates.hours_from_string(value)
+    except ValueError as e:
         raise Problem(str(e)) from None
+
+
+def _calendars(given: list[str] | None, cfg: settings.Config) -> list[settings.Calendar]:
+    if given:
+        return [settings.Calendar(f"calendar {i}", s) for i, s in enumerate(given, 1)]
+    if cfg.calendars:
+        return cfg.calendars
+    if cfg.path and cfg.path.exists():       # the usual case: the file is there and its url line is still empty
+        raise Problem(SETUP_HINT.replace("No calendar is configured.",
+                                         f"No calendar is configured: {cfg.path} has none with an address.", 1))
+    raise Problem(SETUP_HINT)
+
+
+# ---------- which days: one strategy per way of asking ----------
+
+@dataclass
+class _Chosen:
+    days: list[dt.date]
+    hours: tuple[dt.time, dt.time] | None = None    # read from the message, if it stated them
+    minutes: int | None = None                      # the meeting length, if a model read one
+    read_by: str | None = None                      # how a message was read
+
+
+def _from_message(q: Query, cfg: settings.Config, today: dt.date) -> _Chosen:
+    got = extract.run(cfg.extract_command, q.message, today) if (cfg.extract_command and q.use_extract) else None
+    if got:
+        try:
+            hours = dates.hours_from_string(got["hours"]) if got["hours"] else None
+        except ValueError:
+            hours = None
+        chosen = _Chosen(got["days"], hours, got["minutes"], "your model")
+    else:
+        chosen = _Chosen(dates.parse_days(q.message, today), dates.parse_hours(q.message), None, "pattern matching")
+    if not chosen.days:
+        raise Problem("found no dates in the message. Give them explicitly: days \"Thu 1 Oct, Fri 2 Oct\"")
+    return chosen
+
+
+def _listed(q: Query, cfg: settings.Config, today: dt.date) -> _Chosen:
+    days = dates.parse_days(q.days, today)
+    if not days:
+        raise Problem(f"could not read any date from {q.days!r}. Examples: \"Thu 1 Oct, 5 Oct\", 2026-10-05, \"next week\"")
+    return _Chosen(days)
+
+
+def _in_range(q: Query, cfg: settings.Config, today: dt.date) -> _Chosen:
+    try:
+        first = dt.date.fromisoformat(q.start) if q.start else today
+        last = dt.date.fromisoformat(q.end) if q.end else None
+    except ValueError:
+        raise Problem("the first and last day are dates like 2026-10-05") from None
+    weekends = q.weekends or cfg.weekends
+    if last is None:                                  # the next working days
+        days, d = [], first
+        while len(days) < cfg.days_ahead:
+            if weekends or d.weekday() < 5:
+                days.append(d)
+            d += dt.timedelta(days=1)
+        return _Chosen(days)
+    if last < first:
+        raise Problem("the last day is before the first day")
+    every = (first + dt.timedelta(days=i) for i in range((last - first).days + 1))
+    return _Chosen([d for d in every if weekends or d.weekday() < 5])
+
+
+DayStrategy = Callable[[Query, settings.Config, dt.date], _Chosen]
+
+
+def _strategy(q: Query) -> DayStrategy:
+    if q.message:
+        return _from_message
+    if q.days:
+        return _listed
+    return _in_range
+
+
+# ---------- the plan: every setting resolved, before any calendar is read ----------
+
+@dataclass
+class _Plan:
+    tz: ZoneInfo
+    now: dt.datetime
+    days: list[dt.date]
+    past: list[dt.date]
+    opens: dt.time
+    closes: dt.time
+    min_minutes: int
+    buffer_minutes: int
+    all_day_busy: bool
+    read_by: str | None
+    calendars: list[settings.Calendar] = field(default_factory=list)
+
+
+def _plan(q: Query, cfg: settings.Config) -> _Plan:
     tz = _timezone(q.timezone, cfg)
     now = settings.now(tz)
-    today = now.date()
     min_minutes = q.min_minutes if q.min_minutes is not None else cfg.min_minutes
     buffer_minutes = q.buffer_minutes if q.buffer_minutes is not None else cfg.buffer_minutes
     if min_minutes < 1 or buffer_minutes < 0:
         raise Problem("min_minutes must be at least 1 and buffer_minutes cannot be negative")
-    weekends = q.weekends or cfg.weekends
-    try:
-        hours = dates.hours_from_string(q.hours) if q.hours else None
-    except ValueError as e:
-        raise Problem(str(e)) from None
-    read_by = None
+    asked_hours = _hours(q.hours) if q.hours else None
 
-    if q.message:
-        got = extract.run(cfg.extract_command, q.message, today) if (cfg.extract_command and q.use_extract) else None
-        if got:
-            days, read_by = got["days"], "your model"
-            if hours is None and got["hours"]:
-                try:
-                    hours = dates.hours_from_string(got["hours"])
-                except ValueError:
-                    pass
-            if q.min_minutes is None and got["minutes"]:
-                min_minutes = got["minutes"]
-        else:
-            days, read_by = dates.parse_days(q.message, today), "pattern matching"
-            if hours is None:
-                hours = dates.parse_hours(q.message)
-        if not days:
-            raise Problem("found no dates in the message. Give them explicitly: days \"Thu 1 Oct, Fri 2 Oct\"")
-    elif q.days:
-        days = dates.parse_days(q.days, today)
-        if not days:
-            raise Problem(f"could not read any date from {q.days!r}. Examples: \"Thu 1 Oct, 5 Oct\" or 2026-10-05")
-    else:
-        try:
-            first = dt.date.fromisoformat(q.start) if q.start else today
-            last = dt.date.fromisoformat(q.end) if q.end else None
-        except ValueError:
-            raise Problem("the first and last day are dates like 2026-10-05") from None
-        if last is None:
-            days = _working_days(first, cfg.days_ahead, weekends)
-        else:
-            if last < first:
-                raise Problem("the last day is before the first day")
-            days = [first + dt.timedelta(days=i) for i in range((last - first).days + 1)]
-            days = [d for d in days if weekends or d.weekday() < 5]
-
-    past = [d for d in days if d < today]
-    days = [d for d in days if d >= today]
+    chosen = _strategy(q)(q, cfg, now.date())
+    past = [d for d in chosen.days if d < now.date()]
+    days = [d for d in chosen.days if d >= now.date()]
     if not days:
         raise Problem("every date asked for is already in the past")
-    opens, closes = hours or dates.hours_from_string(cfg.hours)
+    opens, closes = asked_hours or chosen.hours or _hours(cfg.hours)
+    if q.min_minutes is None and chosen.minutes:
+        min_minutes = chosen.minutes
+    return _Plan(tz, now, days, past, opens, closes, min_minutes, buffer_minutes,
+                 q.all_day_busy or cfg.all_day_busy, chosen.read_by, _calendars(q.calendars, cfg))
 
-    calendars = _calendars(q.calendars, cfg)
-    if not calendars:
-        raise _no_calendar(cfg)
-    window_start = dt.datetime.combine(min(days), dt.time.min, tz)
-    window_end = dt.datetime.combine(max(days) + dt.timedelta(days=1), dt.time.min, tz)
-    notes: list[str] = []
+
+# ---------- the answer ----------
+
+def _busy(plan: _Plan, cfg: settings.Config, reader) -> tuple[list[slots.Busy], list[str], int]:
+    window_start = dt.datetime.combine(min(plan.days), dt.time.min, plan.tz)
+    window_end = dt.datetime.combine(max(plan.days) + dt.timedelta(days=1), dt.time.min, plan.tz)
     busy: list[slots.Busy] = []
+    notes: list[str] = []
     events_read = 0
-    for name, events in _load(calendars, tz):
+    for name, events in sources.load(plan.calendars, plan.tz, reader=reader):
         events_read += len(events)
-        busy += slots.busy_blocks(events, window_start, window_end, me=cfg.me,
-                                  all_day_busy=q.all_day_busy or cfg.all_day_busy, calendar=name, warnings=notes)
+        busy += slots.busy_blocks(events, window_start, window_end, me=cfg.me, all_day_busy=plan.all_day_busy,
+                                  calendar=name, warnings=notes)
     busy.sort(key=lambda b: (b.start, b.end))
+    return busy, notes, events_read
 
-    clock = lambda t: t.astimezone(tz).strftime("%H:%M")
-    out_days = []
-    for d in days:
-        free = slots.free_slots(d, opens, closes, busy, tz, buffer_minutes=buffer_minutes,
-                                min_minutes=min_minutes, now=now if d == today else None)
-        day_start = dt.datetime.combine(d, dt.time.min, tz)
-        blocking = [b for b in busy if b.start < day_start + dt.timedelta(days=1) and b.end > day_start]
-        out_days.append({
-            "date": d.isoformat(), "label": label(d),
-            "free": [[clock(a), clock(b)] for a, b in free],
-            "busy": [{"start": clock(b.start), "end": clock(b.end), "title": b.title or "untitled", "calendar": b.calendar}
-                     for b in blocking],
-        })
+
+def _day(d: dt.date, plan: _Plan, busy: list[slots.Busy]) -> dict:
+    clock = lambda t: t.astimezone(plan.tz).strftime("%H:%M")
+    free = slots.free_slots(d, plan.opens, plan.closes, busy, plan.tz, buffer_minutes=plan.buffer_minutes,
+                            min_minutes=plan.min_minutes, now=plan.now if d == plan.now.date() else None)
+    day_start = dt.datetime.combine(d, dt.time.min, plan.tz)
+    blocking = [b for b in busy if b.start < day_start + dt.timedelta(days=1) and b.end > day_start]
     return {
-        "timezone": tz.key, "hours": [opens.strftime("%H:%M"), closes.strftime("%H:%M")],
-        "min_minutes": min_minutes, "buffer_minutes": buffer_minutes,
-        "days": out_days,
-        "read_by": read_by,                               # how the days were read from a message, or None
-        "past": [d.isoformat() for d in past],            # asked for, but already gone
-        "notes": notes,
-        "events_read": events_read, "calendars": len(calendars), "blocking": len(busy),
+        "date": d.isoformat(), "label": label(d),
+        "free": [[clock(a), clock(b)] for a, b in free],
+        "busy": [{"start": clock(b.start), "end": clock(b.end), "title": b.title or "untitled", "calendar": b.calendar}
+                 for b in blocking],
     }
 
 
-def lines(result: dict, busy: bool = False) -> list[str]:
-    """The answer as text, one line per day, ready to paste into a reply."""
-    out = []
-    for day in result["days"]:
-        free = ", ".join(f"{a}–{b}" for a, b in day["free"]) or "no free slot"
-        out.append(f"- {day['label']}: {free}")
-        if busy:
-            for b in day["busy"]:
-                where = f"  [{b['calendar']}]" if result["calendars"] > 1 else ""
-                out.append(f"      busy {b['start']}–{b['end']}  {b['title']}{where}")
-    return out
+def find_free(q: Query, *, reader: sources.Reader | None = None) -> dict:
+    """Free slots for the days asked about. See the module docstring for the shape of the answer.
+
+    `reader` turns a calendar's address or path into its text; by default it is fetched or read from disk.
+    """
+    cfg = _settings(q.config_path)
+    plan = _plan(q, cfg)
+    busy, notes, events_read = _busy(plan, cfg, reader)
+    return {
+        "timezone": plan.tz.key, "hours": [plan.opens.strftime("%H:%M"), plan.closes.strftime("%H:%M")],
+        "min_minutes": plan.min_minutes, "buffer_minutes": plan.buffer_minutes,
+        "days": [_day(d, plan, busy) for d in plan.days],
+        "read_by": plan.read_by,                          # how the days were read from a message, or None
+        "past": [d.isoformat() for d in plan.past],       # asked for, but already gone
+        "notes": notes,
+        "events_read": events_read, "calendars": len(plan.calendars), "blocking": len(busy),
+    }
 
 
-def _no_calendar(cfg: settings.Config) -> Problem:
-    if cfg.path and cfg.path.exists():       # the usual case: the file is there and its url line is still empty
-        return Problem(SETUP_HINT.replace("No calendar is configured.",
-                                          f"No calendar is configured: {cfg.path} has none with an address.", 1))
-    return Problem(SETUP_HINT)
-
+# ---------- checking and adding calendars ----------
 
 def _found(name: str, events: list[ical.Event], cfg: settings.Config, now: dt.datetime) -> dict:
     blocks = slots.busy_blocks(events, now, now + dt.timedelta(days=14), me=cfg.me, all_day_busy=cfg.all_day_busy)
@@ -247,18 +245,13 @@ def _found(name: str, events: list[ical.Event], cfg: settings.Config, now: dt.da
 
 
 def check_calendars(config_path: str | None = None, calendars: list[str] | None = None,
-                    timezone: str | None = None) -> dict:
+                    timezone: str | None = None, *, reader: sources.Reader | None = None) -> dict:
     """Read every calendar and say what was found. Raises `Problem` if any cannot be read."""
-    try:
-        cfg = settings.load(config_path)
-    except settings.ConfigError as e:
-        raise Problem(str(e)) from None
+    cfg = _settings(config_path)
     tz = _timezone(timezone, cfg)
     cals = _calendars(calendars, cfg)
-    if not cals:
-        raise _no_calendar(cfg)
     now = settings.now(tz)
-    found = [_found(name, events, cfg, now) for name, events in _load(cals, tz)]
+    found = [_found(name, events, cfg, now) for name, events in sources.load(cals, tz, reader=reader)]
     return {"settings": str(cfg.path) if cfg.path and cfg.path.exists() else None, "timezone": tz.key, "calendars": found}
 
 
@@ -267,12 +260,9 @@ def add_calendar(source: str, name: str | None = None, config_path: str | None =
 
     It is not offered to agents as a tool: the address is a secret and should go from the person to the file.
     """
-    try:
-        cfg = settings.load(config_path)
-    except settings.ConfigError as e:
-        raise Problem(str(e)) from None
+    cfg = _settings(config_path)
     tz = _timezone(None, cfg)
-    (_, events), = _load([settings.Calendar(name or "new", source)], tz, consequence="Nothing was saved.")
+    (_, events), = sources.load([settings.Calendar(name or "new", source)], tz, consequence="Nothing was saved.")
     try:
         path, name = settings.add_calendar(source, name, cfg.path)
     except settings.ConfigError as e:

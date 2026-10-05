@@ -27,37 +27,51 @@ def _error(id_, code: int, message: str) -> dict:
     return {"jsonrpc": "2.0", "id": id_, "error": {"code": code, "message": message}}
 
 
+def _initialize(params: dict, config_path: str | None) -> dict:
+    asked = params.get("protocolVersion")
+    return {
+        "protocolVersion": asked if asked in PROTOCOLS else PROTOCOLS[0],
+        "capabilities": {"tools": {"listChanged": False}},
+        "serverInfo": {"name": "when-free", "version": __version__},
+        "instructions": INSTRUCTIONS,
+    }
+
+
+def _tools_list(params: dict, config_path: str | None) -> dict:
+    return {"tools": tools.TOOLS}
+
+
+def _tools_call(params: dict, config_path: str | None) -> dict:
+    name, arguments = params.get("name"), params.get("arguments") or {}
+    try:
+        text, data = tools.call(name, arguments, config_path=config_path)
+    except api.Problem as e:
+        # A tool that could not do its job is a result the model can read and act on, not a protocol error.
+        return {"content": [{"type": "text", "text": str(e)}], "isError": True}
+    except Exception as e:                            # never take the server down, never leak a traceback
+        return {"content": [{"type": "text", "text": f"when-free failed: {e.__class__.__name__}"}], "isError": True}
+    return {"content": [{"type": "text", "text": text}], "structuredContent": data, "isError": False}
+
+
+METHODS = {
+    "initialize": _initialize,
+    "ping": lambda params, config_path: {},
+    "tools/list": _tools_list,
+    "tools/call": _tools_call,
+}
+
+
 def handle(message, config_path: str | None = None) -> dict | None:
     """Answer one message. Notifications (no id) get no answer."""
     if not isinstance(message, dict) or message.get("jsonrpc") != "2.0" or "method" not in message:
         return _error(message.get("id") if isinstance(message, dict) else None, -32600, "not a JSON-RPC 2.0 request")
-    method, id_, params = message["method"], message.get("id"), message.get("params") or {}
     if "id" not in message:
         return None                                   # notifications/initialized, notifications/cancelled, ...
-
-    if method == "initialize":
-        asked = params.get("protocolVersion")
-        return _result(id_, {
-            "protocolVersion": asked if asked in PROTOCOLS else PROTOCOLS[0],
-            "capabilities": {"tools": {"listChanged": False}},
-            "serverInfo": {"name": "when-free", "version": __version__},
-            "instructions": INSTRUCTIONS,
-        })
-    if method == "ping":
-        return _result(id_, {})
-    if method == "tools/list":
-        return _result(id_, {"tools": tools.TOOLS})
-    if method == "tools/call":
-        name, arguments = params.get("name"), params.get("arguments") or {}
-        try:
-            text, data = tools.call(name, arguments, config_path=config_path)
-        except api.Problem as e:
-            # A tool that could not do its job is a result the model can read and act on, not a protocol error.
-            return _result(id_, {"content": [{"type": "text", "text": str(e)}], "isError": True})
-        except Exception as e:                        # never take the server down, never leak a traceback
-            return _result(id_, {"content": [{"type": "text", "text": f"when-free failed: {e.__class__.__name__}"}], "isError": True})
-        return _result(id_, {"content": [{"type": "text", "text": text}], "structuredContent": data, "isError": False})
-    return _error(id_, -32601, f"method not found: {method}")
+    method, id_ = message["method"], message["id"]
+    answer = METHODS.get(method)
+    if answer is None:
+        return _error(id_, -32601, f"method not found: {method}")
+    return _result(id_, answer(message.get("params") or {}, config_path))
 
 
 def serve(stdin=None, stdout=None, config_path: str | None = None) -> int:
