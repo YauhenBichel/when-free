@@ -33,6 +33,8 @@ SETUP_HINT = """No calendar is configured.
   whenfree add           asks for your calendar's private iCal address, checks it and saves it
   whenfree init          only creates the settings file, for you to edit
 
+Installed with uvx, or as a Claude Code plugin? Then it is: uvx when-free add
+
 Or try it once without a settings file:
 
   whenfree --calendar ~/Downloads/calendar.ics"""
