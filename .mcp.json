@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "when-free": {
+      "command": "uvx",
+      "args": ["when-free", "mcp"]
+    }
+  }
+}

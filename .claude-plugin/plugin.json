@@ -1,0 +1,13 @@
+{
+  "name": "when-free",
+  "version": "0.3.0",
+  "description": "Ask when you are free, or paste a message asking for your availability, and get the slots you can offer from your real calendars. Read-only, runs on your machine, no account.",
+  "author": {
+    "name": "Yauhen Bichel",
+    "url": "https://github.com/YauhenBichel"
+  },
+  "homepage": "https://github.com/YauhenBichel/when-free#readme",
+  "repository": "https://github.com/YauhenBichel/when-free",
+  "license": "Apache-2.0",
+  "keywords": ["calendar", "availability", "free-busy", "scheduling", "mcp"]
+}
