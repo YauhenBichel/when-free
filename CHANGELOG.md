@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.4.0 (2026-10-08)
+
 On your other devices: phones and tablets, Home Assistant and voice assistants, desktop status bars.
 
 - `whenfree now`: free or busy right now, until when, and the next free slot, formatted for SwiftBar/xbar/Argos,

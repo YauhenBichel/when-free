@@ -3,7 +3,7 @@
   "manifest_version": "0.4",
   "name": "when-free",
   "display_name": "when-free",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Which days and times am I free? Reads your calendars and answers with the slots you can offer. Read-only.",
   "long_description": "Ask Claude when you are free, or paste the message asking for your availability, and it answers from your real calendar: Google, Outlook, iCloud or any .ics feed. It understands explicit dates and words like \"next week\" or \"any afternoon\", keeps a buffer around events, and never sees event titles unless you ask. It only reads: it cannot create, change or delete anything. Runs on your computer; no account, no API key.",
   "author": {
