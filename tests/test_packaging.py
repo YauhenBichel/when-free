@@ -15,6 +15,9 @@ def test_one_version_everywhere():
     assert json.loads((ROOT / "packaging/mcpb/manifest.json").read_text())["version"] == v
     server = json.loads((ROOT / "server.json").read_text())
     assert server["version"] == v and [p["version"] for p in server["packages"]] == [v]
+    assert json.loads((ROOT / ".claude-plugin/plugin.json").read_text())["version"] == v
+    marketplace = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
+    assert [p["version"] for p in marketplace["plugins"]] == [v]
 
 
 def test_the_registry_can_verify_the_pypi_package():

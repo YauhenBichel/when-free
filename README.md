@@ -166,11 +166,25 @@ Every way gives the same answer, only reads, and leaves event titles out unless 
 | Your tool | Use | Set up |
 |---|---|---|
 | Claude Desktop | [One-click extension](https://github.com/YauhenBichel/when-free/blob/main/docs/recipes.md#claude-desktop-in-one-click) | double-click |
+| Claude Code, with a skill that knows when to use it | [Plugin](#claude-code-plugin) | two commands |
 | Claude Code, Cursor, VS Code, any MCP client | [MCP server](#mcp-claude-cursor-and-other-assistants) | one line |
 | Raycast, a right-click on a message (macOS) | [Recipes](https://github.com/YauhenBichel/when-free/blob/main/docs/recipes.md) | a few minutes |
 | Open WebUI, n8n, Shortcuts, Raycast, anything that calls a URL | [Local HTTP server](#http-open-webui-n8n-shortcuts-and-scripts) | `whenfree serve` |
 | Your own agent with function calling | [Schema and call](#function-calling-harnesses) | two commands |
 | Python | [The library](#python) | `import whenfree` |
+
+### Claude Code plugin
+
+The plugin bundles the MCP server with a skill that tells Claude when to use it: when you
+ask about your availability, paste a message asking when you can meet, or before it
+proposes a time.
+
+```
+/plugin marketplace add YauhenBichel/when-free
+/plugin install when-free@when-free
+```
+
+Then add your calendar once, if you have not yet: `uvx when-free add`.
 
 ### MCP: Claude, Cursor and other assistants
 

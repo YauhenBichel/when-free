@@ -1,0 +1,16 @@
+{
+  "name": "when-free",
+  "description": "when-free for Claude Code: your free times from your own calendars.",
+  "owner": {
+    "name": "Yauhen Bichel",
+    "url": "https://github.com/YauhenBichel"
+  },
+  "plugins": [
+    {
+      "name": "when-free",
+      "source": "./",
+      "description": "Which days and times am I free? Reads your calendars and answers with the slots you can offer. Read-only.",
+      "version": "0.3.0"
+    }
+  ]
+}

@@ -20,6 +20,8 @@ On your other devices: phones and tablets, Home Assistant and voice assistants, 
   dashboard are in `integrations/homeassistant/examples.yaml`.
 - `whenfree serve` keeps calendars for 5 minutes, so phones and dashboards that ask often do not fetch them each
   time.
+- A Claude Code plugin: the MCP server plus a skill that tells Claude when to use it
+  (`/plugin marketplace add YauhenBichel/when-free`, then `/plugin install when-free@when-free`).
 
 ## 0.3.0 (2026-10-05)
 
