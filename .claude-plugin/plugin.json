@@ -1,6 +1,6 @@
 {
   "name": "when-free",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Ask when you are free, or paste a message asking for your availability, and get the slots you can offer from your real calendars. Read-only, runs on your machine, no account.",
   "author": {
     "name": "Yauhen Bichel",

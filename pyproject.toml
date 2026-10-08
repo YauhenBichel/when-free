@@ -1,6 +1,6 @@
 [project]
 name = "when-free"
-version = "0.3.0"
+version = "0.4.0"
 description = "Which days and times am I free? Reads your calendar feeds and a pasted message, and prints the slots you can offer. Runs on your own machine."
 readme = "README.md"
 license = "Apache-2.0"
