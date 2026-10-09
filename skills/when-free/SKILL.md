@@ -35,7 +35,8 @@ did not return.
 
 ## If no calendar is set up
 
-The tools will say so. Tell the user, in plain words, to run this once in a terminal
+The tools will say so. Stop there: do not look for the user's calendar in other tools
+or connectors instead. Tell the user, in plain words, to run this once in a terminal
 and paste their calendar's private `.ics` address when asked:
 
 ```

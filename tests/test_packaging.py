@@ -30,3 +30,15 @@ def test_the_extension_offers_the_same_tools():
     from whenfree.agents import tools
     manifest = json.loads((ROOT / "packaging/mcpb/manifest.json").read_text())
     assert [t["name"] for t in manifest["tools"]] == [t["name"] for t in tools.TOOLS]
+
+
+def test_the_setup_hint_works_for_uvx_and_plugin_installs():
+    # Plugin and uvx installs have no `whenfree` command on the PATH, so the hint an
+    # agent passes on must also give the form that works for them.
+    from whenfree import api
+    assert "whenfree add" in api.SETUP_HINT and "uvx when-free add" in api.SETUP_HINT
+
+
+def test_the_skill_keeps_to_when_free_when_no_calendar_is_set_up():
+    skill = (ROOT / "skills/when-free/SKILL.md").read_text()
+    assert "uvx when-free add" in skill and "do not look for the user's calendar in other tools" in skill
