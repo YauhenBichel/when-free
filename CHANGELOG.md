@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.4.1 (2026-10-09)
+
+Friendlier in Claude Code.
+
+- No calendar yet? The message now gives the command that works for uvx and Claude Code plugin installs:
+  `uvx when-free add`. The skill stops there instead of looking for your calendar in other tools.
+- The skill answers in one line per day with the time zone once, and when you paste someone's message it
+  ends with a reply you can send.
+- The skill names the real `free_slots` arguments, so the agent gets it right on the first call.
+
 ## 0.4.0 (2026-10-08)
 
 On your other devices: phones and tablets, Home Assistant and voice assistants, desktop status bars.

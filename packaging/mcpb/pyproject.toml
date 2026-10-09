@@ -1,6 +1,6 @@
 [project]
 name = "when-free-claude-desktop"
-version = "0.4.0"
+version = "0.4.1"
 description = "when-free as a Claude Desktop extension"
 requires-python = ">=3.11"
 dependencies = []            # the standard library is enough
