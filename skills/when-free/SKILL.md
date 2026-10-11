@@ -5,8 +5,9 @@ description: Answer "when am I free?" from the user's own calendars. Use when th
 
 # when-free
 
-when-free reads the user's calendars on their own machine and says which times are
-free. It only reads: it cannot create, change or delete anything.
+when-free finds the time slots the user can offer. It collects the request with
+tools, reads the calendars with `free_slots`, and hands the slots back with tools.
+It cannot create, change or delete calendar events.
 
 ## When to use it
 
@@ -18,13 +19,19 @@ free. It only reads: it cannot create, change or delete anything.
 
 ## How
 
-1. **Free times for a period or a pasted message:** call `free_slots`. Pass the
-   user's words, or the pasted message, as they are; it understands explicit dates
-   and phrases like "next week" or "any afternoon". A pasted message goes in
-   `message`, a phrase such as "next week" in `days`, and dates in `from` and `to`
-   (YYYY-MM-DD). Set `min_minutes` to the meeting length when the user gives one.
-2. **Right now:** call `status`.
-3. **Something looks wrong** (no slots at all, or an error about calendars): call
+1. **Collect the request.** If it is already in the chat, use that text. If it is in
+   mail or chat, read it with the matching tool (`gmail_read`, `outlook_read`,
+   `slack_history`, `teams_history`) and take the dates and hours from what that
+   tool returns. Do not look for a calendar there.
+2. **Free times:** call `free_slots`. Pass the collected text as `message`, a phrase
+   such as "next week" in `days`, and dates in `from` and `to` (YYYY-MM-DD). It
+   understands explicit dates and phrases like "next week" or "any afternoon". Set
+   `min_minutes` to the meeting length when the user gives one.
+3. **Right now:** call `status`.
+4. **Hand the slots back** with the slots `free_slots` returned. A mail reply is
+   `gmail_draft` or `outlook_draft` (a draft, not a sent message). Post to Slack or
+   Teams only when the user asked to post.
+5. **Something looks wrong** (no slots at all, or an error about calendars): call
    `check_calendars` and tell the user what it reports.
 
 Answer with the slots it returns. Never invent times, and never offer a time the tool
