@@ -16,14 +16,18 @@ from .core.errors import Problem
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")       # newest first
 
 INSTRUCTIONS = (
-    "when-free is an MCP server. It offers tools and does nothing else. "
-    "Use free_slots to find when the user is free before proposing or confirming a time. "
-    "It reads the user's calendars and never changes them. Pass explicit dates when you know them. "
-    "If it returns an error, tell the user what it says: do not guess availability. "
-    "The other tools reach a service only when the user asked to use that service. "
-    "gmail_draft and outlook_draft save a draft and do not send it. "
-    "slack_post, teams_post and github_comment do send. "
-    "If a tool says a service is not connected, tell the user to run whenfree connect for it. Do not guess."
+    "when-free finds the time slots the user can offer. It only offers tools. "
+    "Collect the request with tools, then answer with tools. "
+    "Read a mail or chat message with gmail_search, gmail_read, outlook_search, outlook_read, "
+    "slack_history or teams_history when that is where the request is. "
+    "Pass that text to free_slots as message, or pass days, from and to when the dates are already known. "
+    "free_slots reads the calendars and returns the open slots. It never changes them. "
+    "status answers whether the user is free right now. "
+    "Give the user only slots a tool returned. If a tool returns an error, say what it says. Do not guess. "
+    "To hand the slots back, use gmail_draft or outlook_draft. Those save a draft and do not send it. "
+    "slack_post and teams_post send, so use them only when the user asked to post the slots. "
+    "Do not look for a calendar in mail or chat. Calendars are read only by free_slots, status and check_calendars. "
+    "If a tool says a service is not connected, tell the user to run whenfree connect for it."
 )
 
 
