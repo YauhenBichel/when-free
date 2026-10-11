@@ -18,7 +18,7 @@
 
 ## Contents
 
-[Try it](#try-it-in-a-minute) · [Add your calendar](#add-your-calendar) · [Everyday use](#everyday-use) · [Reading a message](#reading-a-message) · [Use it from other tools](#use-it-from-other-tools) · [Other devices](#on-your-other-devices) · [Privacy](#privacy) · [Settings](#settings) · [What counts as busy](#what-counts-as-busy) · [Limits](#limits) · [Problems](#if-something-does-not-work)
+[Try it](#try-it-in-a-minute) · [Add your calendar](#add-your-calendar) · [Everyday use](#everyday-use) · [Reading a message](#reading-a-message) · [Use it from other tools](#use-it-from-other-tools) · [Other devices](#on-your-other-devices) · [Privacy](#privacy) · [Settings](#settings) · [What counts as busy](#what-counts-as-busy) · [Limits](#limits) · [Problems](#if-something-does-not-work) · [Where it is listed](#where-it-is-listed)
 
 ## Try it in a minute
 
@@ -341,6 +341,14 @@ A slot shorter than `min_minutes` after the buffers isn't offered. For today, th
 | An event you just added is missing | The feed refreshes with a delay. See [Limits](#limits) |
 | A meeting doesn't block time | Run `whenfree --busy` to see what was read. Declined invitations, events marked Free and whole-day events don't block; see [What counts as busy](#what-counts-as-busy) |
 | `whenfree check` | Says whether every calendar can be read, at any time |
+
+## Where it is listed
+
+- The official [MCP registry](https://registry.modelcontextprotocol.io), as `io.github.YauhenBichel/when-free`
+- [PyPI](https://pypi.org/project/when-free/), as `when-free`
+- [Glama](https://glama.ai/mcp/servers/YauhenBichel/when-free), [MCP Servers Live](https://linny006.github.io/mcp-servers-live/r/YauhenBichel/when-free/) and [MCP Changefeed](https://github.com/rogerchappel/mcpchangefeed), which index MCP servers
+
+If you use it somewhere, or wrote about it, open an issue and it goes here.
 
 ## Development
 
