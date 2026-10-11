@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "when-free": {
+      "command": "uv",
+      "args": [
+        "run",
+        "whenfree",
+        "mcp"
+      ]
+    }
+  }
+}
