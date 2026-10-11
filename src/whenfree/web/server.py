@@ -7,8 +7,10 @@ The tools (one path each, JSON in and out, described at /openapi.json), a page f
 as a calendar feed at /free.ics, and the status right now at /status. Standard library only.
 
 Who may ask:
-- the owner's token (kept next to the settings file, or WHENFREE_TOKEN) may use every tool;
+- the owner's token (kept next to the settings file, or WHENFREE_TOKEN) may use the calendar tools;
 - a paired device's token (`whenfree devices add`) may see free time and the status, never event titles.
+
+Mail and chat tools are not served here. They are tools of the MCP server (`whenfree mcp`) only.
 
 It listens on 127.0.0.1 unless told otherwise. There, a request whose Host is not this machine is refused, which
 stops a web page from reaching it through a name that points here (DNS rebinding). Listening on another address
@@ -32,7 +34,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .. import __version__, api, settings
-from ..agents import tools
+from .. import tools
 from ..calendars import cache
 from ..devices import feed, pairing
 
@@ -101,6 +103,8 @@ def openapi(base_url: str) -> dict:
     }}
     paths = {}
     for tool in tools.TOOLS:
+        if tool["name"] not in tools.HTTP_TOOLS:
+            continue
         paths[f"/{tool['name']}"] = {"post": {
             "operationId": tool["name"],
             "summary": tool["description"].split(". ")[0] + ".",
@@ -216,9 +220,9 @@ def make_handler(token: str, config_path: str | None, origins: list[str], base_u
                 return self._feed(dict(query).get("t"))
             if name == "status.txt":
                 return self._status_text()
-            tool = tools.REGISTRY.get(name)
+            tool = tools.REGISTRY.get(name) if name in tools.HTTP_TOOLS else None
             if tool is None:
-                return self._send(404, {"ok": False, "error": f"no such path. Tools: {', '.join('/' + t for t in tools.REGISTRY)}"})
+                return self._send(404, {"ok": False, "error": f"no such path. Tools: {', '.join('/' + t for t in tools.HTTP_TOOLS)}"})
             caller = self._caller()
             if caller is None:
                 return self._refuse()

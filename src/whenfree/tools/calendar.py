@@ -1,21 +1,9 @@
-"""The tools an agent can call, described once and offered four ways.
-
-- the MCP server (`whenfree mcp`) lists and runs them
-- `whenfree schema` prints them for function-calling harnesses (MCP shape or OpenAI shape)
-- `whenfree call NAME` runs one from a shell, JSON in and JSON out
-- `whenfree serve` offers them over local HTTP
-
-Adding a tool is one entry in REGISTRY: its description for the model and the function that runs it.
-
-Event titles are private. A tool leaves them out unless the caller asks with `include_busy`.
-"""
+"""The calendar tools. They read free time and never change a calendar."""
 from __future__ import annotations
-
-from collections.abc import Callable
-from dataclasses import dataclass
 
 from .. import api
 from ..core import render
+from .model import Context, Tool
 
 _FREE_SLOTS = {
     "name": "free_slots",
@@ -71,58 +59,6 @@ _CHECK = {
     "inputSchema": {"type": "object", "properties": {}, "additionalProperties": False},
 }
 
-_TYPES = {"string": str, "integer": int, "boolean": bool}
-
-
-@dataclass(frozen=True)
-class Context:
-    """What a front end passes to every tool: which settings file, and how to read calendars (cached or not)."""
-    config_path: str | None = None
-    reader: Callable[[str], str] | None = None
-
-
-@dataclass(frozen=True)
-class Tool:
-    """A tool: what it is called, how it is described to a model, and what runs it."""
-    spec: dict
-    run: Callable[[dict, Context], tuple[str, dict]]          # (arguments, context) -> (text, data)
-
-    @property
-    def name(self) -> str:
-        return self.spec["name"]
-
-    @property
-    def properties(self) -> dict:
-        return self.spec["inputSchema"]["properties"]
-
-    def validate(self, arguments: dict) -> None:
-        if not isinstance(arguments, dict):
-            raise api.Problem("arguments must be an object")
-        for key, value in arguments.items():
-            if key not in self.properties:
-                raise api.Problem(f"unknown argument {key!r} for {self.name}. Known: {', '.join(self.properties) or 'none'}")
-            kind = _TYPES[self.properties[key]["type"]]
-            if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
-                raise api.Problem(f"argument {key!r} should be {self.properties[key]['type']}")
-
-    def coerce(self, pairs: list[tuple[str, str]]) -> dict:
-        """Arguments that arrived as text (a query string) converted by the schema. Bad values stay text,
-        so that `validate` says what is wrong."""
-        out: dict = {}
-        for key, value in pairs:
-            kind = self.properties.get(key, {}).get("type")
-            if kind == "integer":
-                try:
-                    out[key] = int(value)
-                    continue
-                except ValueError:
-                    pass
-            elif kind == "boolean":
-                out[key] = value.lower() in ("1", "true", "yes", "on", "")
-                continue
-            out[key] = value
-        return out
-
 
 def _run_free_slots(arguments: dict, ctx: Context) -> tuple[str, dict]:
     show_busy = bool(arguments.get("include_busy"))
@@ -149,28 +85,4 @@ def _run_status(arguments: dict, ctx: Context) -> tuple[str, dict]:
     return "\n".join([render.status_line(data), *render.status_details(data)]), data
 
 
-REGISTRY: dict[str, Tool] = {t.name: t for t in (
-    Tool(_FREE_SLOTS, _run_free_slots), Tool(_STATUS, _run_status), Tool(_CHECK, _run_check))}
-TOOLS = [t.spec for t in REGISTRY.values()]
-
-
-def get(name: str) -> Tool:
-    tool = REGISTRY.get(name)
-    if tool is None:
-        raise api.Problem(f"unknown tool {name!r}. Known: {', '.join(REGISTRY)}")
-    return tool
-
-
-def call(name: str, arguments: dict | None = None, *, config_path: str | None = None,
-         reader: Callable[[str], str] | None = None) -> tuple[str, dict]:
-    """Run a tool. Returns (text for a person or a model to read, the same answer as data). Raises api.Problem."""
-    tool = get(name)
-    arguments = arguments or {}
-    tool.validate(arguments)
-    return tool.run(arguments, Context(config_path, reader))
-
-
-def openai_schema() -> list[dict]:
-    """The same tools in the shape function-calling APIs expect."""
-    return [{"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["inputSchema"]}}
-            for t in TOOLS]
+TOOLS = [Tool(_FREE_SLOTS, _run_free_slots), Tool(_STATUS, _run_status), Tool(_CHECK, _run_check)]

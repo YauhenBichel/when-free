@@ -9,7 +9,7 @@ import urllib.request
 
 import pytest
 
-from whenfree.agents import tools
+from whenfree import tools
 from whenfree.web import server
 
 SAMPLE = str(pathlib.Path(__file__).parent / "data" / "sample.ics")
@@ -78,7 +78,8 @@ def test_health_and_openapi_need_no_token(url):
     assert ask(url, "/health", token=None)[1]["name"] == "when-free"
     status, spec, _ = ask(url, "/openapi.json", token=None)
     assert status == 200 and spec["openapi"].startswith("3.1")
-    assert sorted(spec["paths"]) == sorted(f"/{t['name']}" for t in tools.TOOLS)
+    assert sorted(spec["paths"]) == sorted(f"/{name}" for name in tools.HTTP_TOOLS)
+    assert "/gmail_search" not in spec["paths"] and "/slack_post" not in spec["paths"]
     op = spec["paths"]["/free_slots"]["post"]
     assert op["operationId"] == "free_slots"
     assert op["requestBody"]["content"]["application/json"]["schema"] == tools.TOOLS[0]["inputSchema"]
@@ -104,7 +105,10 @@ def test_cross_origin_only_for_allowed_origins(url):
 
 
 def test_unknown_path_and_bad_json(url):
-    assert ask(url, "/book_meeting", {})[0] == 404
+    status, body, _ = ask(url, "/book_meeting", {})
+    assert status == 404 and "gmail" not in body["error"]
+    status, body, _ = ask(url, "/gmail_search", {"query": "hello"})
+    assert status == 404 and "gmail" not in body["error"]
     req = urllib.request.Request(url + "/free_slots", data=b"{nope", method="POST",
                                  headers={"Authorization": f"Bearer {TOKEN}"})
     with pytest.raises(urllib.error.HTTPError) as e:

@@ -9,8 +9,7 @@ import pathlib
 import sys
 import urllib.parse
 
-from .. import __version__, api, settings
-from ..agents import mcp, tools
+from .. import __version__, api, mcp, settings, tools
 from ..calendars import cache, sources
 from ..core import render
 from ..devices import pairing, qr, widgets
@@ -197,8 +196,17 @@ def cmd_call(args) -> int:
     return 0
 
 
+def cmd_connect(args) -> int:
+    if args.service is None:
+        text, _ = tools.call("connected_accounts", {}, config_path=args.config)
+        print(text)
+        return 0
+    print(tools.sign_in(args.service, args.config))
+    return 0
+
+
 COMMANDS = {"slots": cmd_slots, "now": cmd_now, "demo": cmd_demo, "add": cmd_add, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp,
-            "serve": cmd_serve, "devices": cmd_devices, "mqtt": cmd_mqtt, "schema": cmd_schema, "call": cmd_call}
+            "serve": cmd_serve, "devices": cmd_devices, "mqtt": cmd_mqtt, "schema": cmd_schema, "call": cmd_call, "connect": cmd_connect}
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -271,7 +279,8 @@ def _parser() -> argparse.ArgumentParser:
     c.add_argument("--tz", metavar="ZONE")
 
     m = sub.add_parser("mcp", help="run as a Model Context Protocol server on standard input and output",
-                       description="An MCP server for assistants and agents. It offers two tools: free_slots and check_calendars.")
+                       description="The MCP server. It offers tools and nothing else: free time from calendars, and, "
+                                   "when a service is signed in, that service's tools.")
     m.add_argument("--config", metavar="FILE")
 
     sv = sub.add_parser("serve", help="run a local HTTP server with an OpenAPI description, for tools that cannot start a command",
@@ -306,6 +315,13 @@ def _parser() -> argparse.ArgumentParser:
     ca.add_argument("tool", help="free_slots or check_calendars")
     ca.add_argument("--args", metavar="JSON", help="the arguments as JSON; without it they are read from standard input")
     ca.add_argument("--config", metavar="FILE")
+
+    co = sub.add_parser("connect", help="sign in a service so its MCP tools can run",
+                        description="Sign in Google (Gmail and Drive), Microsoft (Outlook and Teams), Slack, GitHub, "
+                                    "Notion, Linear or HubSpot. Without a name, says which are signed in. "
+                                    "The token stays on this computer. The MCP server is what uses the tools.")
+    co.add_argument("service", nargs="?", choices=tools.ACCOUNTS)
+    co.add_argument("--config", metavar="FILE")
     return p
 
 
