@@ -9,7 +9,7 @@ import urllib.request
 
 import pytest
 
-from whenfree.agents import tools
+from whenfree import tools
 from whenfree.web import server
 
 SAMPLE = str(pathlib.Path(__file__).parent / "data" / "sample.ics")

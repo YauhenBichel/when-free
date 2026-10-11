@@ -4,7 +4,7 @@ from __future__ import annotations
 import urllib.parse
 
 from ..connect import http, schema, session, text
-from ..core.errors import Problem
+from ...core.errors import Problem
 
 ACCOUNT = "microsoft"
 SCOPES = (
@@ -20,9 +20,7 @@ def _get(url: str, config_path: str | None) -> dict:
 
 
 def _path_id(value, label: str) -> str:
-    if not isinstance(value, str) or not value.strip() or any(ch.isspace() or ch in "?#" for ch in value) or ".." in value:
-        raise Problem(f"{label} should be an id a Teams tool returned")
-    return urllib.parse.quote(value, safe="")
+    return urllib.parse.quote(text.path_id(value, label), safe="")
 
 
 def joined(arguments: dict, config_path: str | None):

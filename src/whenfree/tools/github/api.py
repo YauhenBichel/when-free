@@ -1,10 +1,11 @@
 """GitHub, as tools. Reading repos and issues, and commenting when the user asked to comment. No pushes."""
 from __future__ import annotations
 
+import re
 import urllib.parse
 
 from ..connect import http, schema, session, text
-from ..core.errors import Problem
+from ...core.errors import Problem
 
 ACCOUNT = "github"
 SCOPES = ()
@@ -24,8 +25,13 @@ def _get(url: str, config_path: str | None):
     return http.json_request("GET", url, _headers(config_path), account=ACCOUNT)
 
 
+def _rows(data, take) -> list:
+    if not isinstance(data, list):
+        raise Problem("the service refused the request")
+    return [item for item in data[:take] if isinstance(item, dict)]
+
+
 def _repo(arguments: dict) -> str:
-    import re
     owner, repo = arguments.get("owner"), arguments.get("repo")
     if not all(isinstance(part, str) and re.fullmatch(_NAME, part) for part in (owner, repo)):
         raise Problem("owner and repo should be the names github_repos returned")
@@ -33,38 +39,16 @@ def _repo(arguments: dict) -> str:
 
 
 def repos(arguments: dict, config_path: str | None):
-    # The list endpoint returns a JSON array, which the object helper refuses.
-    return _repos_raw(config_path, text.limit(arguments.get("max")))
-
-
-def _repos_raw(config_path: str | None, n: int):
-    import json
-    status, raw = http.request("GET", f"{_BASE}/user/repos?per_page={n}&sort=updated", _headers(config_path))
-    if status == 401:
-        raise Problem(f"{ACCOUNT} is not connected, or the login expired. Run: whenfree connect {ACCOUNT}")
-    if status >= 400:
-        raise Problem(f"the service refused the request ({status})")
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        data = []
-    rows = [{"name": item.get("full_name"), "private": bool(item.get("private"))} for item in (data or [])[:n] if isinstance(item, dict)]
+    n = text.limit(arguments.get("max"))
+    data = _get(f"{_BASE}/user/repos?{urllib.parse.urlencode({'per_page': n, 'sort': 'updated'})}", config_path)
+    rows = [{"name": item.get("full_name"), "private": bool(item.get("private"))} for item in _rows(data, n)]
     return ("\n".join(row["name"] or "" for row in rows) or "no repositories", {"repos": rows})
 
 
 def issues(arguments: dict, config_path: str | None):
-    import json
     n = text.limit(arguments.get("max"))
-    status, raw = http.request("GET", f"{_BASE}/repos/{_repo(arguments)}/issues?state=open&per_page={n}", _headers(config_path))
-    if status >= 400:
-        raise Problem(f"the service refused the request ({status})")
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        data = []
-    if not isinstance(data, list):
-        raise Problem(f"the service refused the request ({status})")
-    rows = [{"number": item.get("number"), "title": item.get("title")} for item in data[:n] if isinstance(item, dict) and "pull_request" not in item]
+    data = _get(f"{_BASE}/repos/{_repo(arguments)}/issues?state=open&per_page={n}", config_path)
+    rows = [{"number": item.get("number"), "title": item.get("title")} for item in _rows(data, n) if "pull_request" not in item]
     return ("\n".join(f"#{row['number']}  {row['title']}" for row in rows) or "no open issues", {"issues": rows})
 
 

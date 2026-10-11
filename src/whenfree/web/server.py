@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .. import __version__, api, settings
-from ..agents import tools
+from .. import tools
 from ..calendars import cache
 from ..devices import feed, pairing
 

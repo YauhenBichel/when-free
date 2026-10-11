@@ -5,7 +5,7 @@ import json
 import os
 import pathlib
 
-from .. import settings
+from ... import settings
 
 
 def directory(config_path: str | None) -> pathlib.Path:

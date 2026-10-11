@@ -4,7 +4,7 @@ from __future__ import annotations
 import urllib.parse
 
 from ..connect import http, schema, session, text
-from ..core.errors import Problem
+from ...core.errors import Problem
 
 ACCOUNT = "microsoft"
 SCOPES = ("offline_access", "User.Read", "Mail.Read", "Mail.ReadWrite")
@@ -44,9 +44,7 @@ def search(arguments: dict, config_path: str | None):
 
 
 def read(arguments: dict, config_path: str | None):
-    mid = arguments.get("id")
-    if not isinstance(mid, str) or not mid.strip() or any(ch.isspace() or ch in "?#" for ch in mid) or ".." in mid:
-        raise Problem("id should be the id outlook_search returned")
+    mid = text.path_id(arguments.get("id"), "id")
     item = _get(f"{_BASE}/{urllib.parse.quote(mid, safe='')}?$select=id,subject,from,receivedDateTime,body", config_path)
     row = _row(item, body=True)
     return f"From: {row['from']}\nSubject: {row['subject']}\n\n{row.get('body', '')}", {"message": row}

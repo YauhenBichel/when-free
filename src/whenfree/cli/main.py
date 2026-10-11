@@ -9,8 +9,7 @@ import pathlib
 import sys
 import urllib.parse
 
-from .. import __version__, api, settings
-from ..agents import mcp, tools
+from .. import __version__, api, mcp, settings, tools
 from ..calendars import cache, sources
 from ..core import render
 from ..devices import pairing, qr, widgets
@@ -18,7 +17,6 @@ from ..smarthome import homeassistant
 from ..smarthome import mqtt as mqttlib
 from ..web import server
 from . import demo
-from .connect import OAUTH, TOKENS, cmd_connect
 
 
 def cmd_slots(args) -> int:
@@ -198,6 +196,15 @@ def cmd_call(args) -> int:
     return 0
 
 
+def cmd_connect(args) -> int:
+    if args.service is None:
+        text, _ = tools.call("connected_accounts", {}, config_path=args.config)
+        print(text)
+        return 0
+    print(tools.sign_in(args.service, args.config))
+    return 0
+
+
 COMMANDS = {"slots": cmd_slots, "now": cmd_now, "demo": cmd_demo, "add": cmd_add, "init": cmd_init, "check": cmd_check, "mcp": cmd_mcp,
             "serve": cmd_serve, "devices": cmd_devices, "mqtt": cmd_mqtt, "schema": cmd_schema, "call": cmd_call, "connect": cmd_connect}
 
@@ -313,7 +320,7 @@ def _parser() -> argparse.ArgumentParser:
                         description="Sign in Google (Gmail and Drive), Microsoft (Outlook and Teams), Slack, GitHub, "
                                     "Notion, Linear or HubSpot. Without a name, says which are signed in. "
                                     "The token stays on this computer. The MCP server is what uses the tools.")
-    co.add_argument("service", nargs="?", choices=(*OAUTH, *TOKENS))
+    co.add_argument("service", nargs="?", choices=tools.ACCOUNTS)
     co.add_argument("--config", metavar="FILE")
     return p
 

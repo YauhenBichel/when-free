@@ -10,9 +10,8 @@ from __future__ import annotations
 import json
 import sys
 
-from .. import __version__
-from ..core.errors import Problem
-from ..tools import registry as tools
+from . import __version__, tools
+from .core.errors import Problem
 
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")       # newest first
 

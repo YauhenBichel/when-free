@@ -5,7 +5,7 @@ import base64
 import urllib.parse
 
 from ..connect import http, schema, session, text
-from ..core.errors import Problem
+from ...core.errors import Problem
 
 ACCOUNT = "google"
 SCOPES = (

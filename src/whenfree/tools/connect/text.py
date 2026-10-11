@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 
-from ..core.errors import Problem
+from ...core.errors import Problem
 
 _SCRIPT = re.compile(r"(?is)<(script|style)\b.*?>.*?</\1>")
 _TAG = re.compile(r"(?s)<[^>]+>")
@@ -21,6 +21,13 @@ def clip(value: str, limit: int = 6000) -> str:
     if len(text) <= limit:
         return text
     return text[:limit] + "\n…truncated"
+
+
+def path_id(value, label: str) -> str:
+    """An id that will be placed in a URL path. Spaces, queries and parent segments are refused."""
+    if not isinstance(value, str) or not value.strip() or any(ch.isspace() or ch in "?#" for ch in value) or ".." in value:
+        raise Problem(f"{label} should be an id a search tool returned")
+    return value
 
 
 def ident(value, label: str = "id") -> str:

@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from whenfree import api, cli
-from whenfree.agents import tools
+from whenfree import tools
 from whenfree.calendars import cache
 from whenfree.core import slots, status
 from whenfree.devices import feed, pairing, qr, widgets

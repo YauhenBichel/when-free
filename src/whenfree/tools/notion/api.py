@@ -4,7 +4,7 @@ from __future__ import annotations
 import urllib.parse
 
 from ..connect import http, schema, session, text
-from ..core.errors import Problem
+from ...core.errors import Problem
 
 ACCOUNT = "notion"
 SCOPES = ()
@@ -35,9 +35,7 @@ def search(arguments: dict, config_path: str | None):
 
 
 def read(arguments: dict, config_path: str | None):
-    block = arguments.get("id")
-    if not isinstance(block, str) or not block.strip() or any(ch.isspace() or ch in "?#" for ch in block) or ".." in block:
-        raise Problem("id should be the id notion_search returned")
+    block = text.path_id(arguments.get("id"), "id")
     got = http.json_request(
         "GET", f"{_BASE}/blocks/{urllib.parse.quote(block, safe='')}/children?page_size=50",
         _headers(config_path), account=ACCOUNT,

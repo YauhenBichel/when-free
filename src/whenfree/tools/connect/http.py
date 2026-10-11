@@ -6,7 +6,7 @@ import urllib.error
 import urllib.request
 from collections.abc import Callable
 
-from ..core.errors import Problem
+from ...core.errors import Problem
 
 _transport: Callable[[str, str, dict, bytes | None], tuple[int, bytes]] | None = None
 
@@ -39,7 +39,8 @@ def request(method: str, url: str, headers: dict | None = None, body: dict | byt
         raise Problem(f"could not reach the service ({exc.__class__.__name__})") from None
 
 
-def json_request(method: str, url: str, headers: dict | None = None, body: dict | None = None, *, account: str) -> dict:
+def json_request(method: str, url: str, headers: dict | None = None, body: dict | None = None, *, account: str) -> dict | list:
+    """A JSON object or array. The body of an error is never returned: it can echo a token."""
     status, raw = request(method, url, headers, body)
     try:
         data = json.loads(raw) if raw else {}
@@ -47,6 +48,6 @@ def json_request(method: str, url: str, headers: dict | None = None, body: dict 
         data = {}
     if status == 401:
         raise Problem(f"{account} is not connected, or the login expired. Run: whenfree connect {account}")
-    if status >= 400 or not isinstance(data, dict):
+    if status >= 400 or not isinstance(data, (dict, list)):
         raise Problem(f"the service refused the request ({status})")
     return data

@@ -27,7 +27,7 @@ def test_the_registry_can_verify_the_pypi_package():
 
 
 def test_the_extension_offers_the_same_tools():
-    from whenfree.agents import tools
+    from whenfree import tools
     manifest = json.loads((ROOT / "packaging/mcpb/manifest.json").read_text())
     assert [t["name"] for t in manifest["tools"]] == [t["name"] for t in tools.TOOLS]
 
@@ -50,7 +50,7 @@ def test_the_skill_offers_a_reply_the_user_can_send():
 
 
 def test_the_arguments_the_skill_names_are_the_real_ones():
-    from whenfree.agents.tools import REGISTRY
+    from whenfree.tools import REGISTRY
     skill = (ROOT / "skills/when-free/SKILL.md").read_text()
     known = set(REGISTRY["free_slots"].properties)
     for name in ("message", "days", "from", "to", "min_minutes"):

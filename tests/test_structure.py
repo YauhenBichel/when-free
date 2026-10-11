@@ -4,7 +4,7 @@ import pathlib
 import pytest
 
 from whenfree import api
-from whenfree.agents import tools
+from whenfree import tools
 from whenfree.core import render
 
 SAMPLE = (pathlib.Path(__file__).parent / "data" / "sample.ics").read_text()
@@ -70,8 +70,9 @@ def test_the_demo_needs_no_calendar_and_no_settings(capsys, monkeypatch):
     assert [d.split(":")[0].split()[1] for d in days] == ["Tue", "Wed", "Thu"]
 
 
-# Which components each one may import. The domain depends on nothing; front ends depend on the rest, never
-# the other way round.
+# Which components each one may import. The domain depends on nothing. A service may use connect and core.
+# Only tools/__init__.py may import a service. The MCP server imports tools, not the services.
+SERVICES = {"gmail", "drive", "outlook", "teams", "slack", "github", "notion", "linear", "hubspot"}
 ALLOWED = {
     "core": set(),
     "messages": {"core"},
@@ -88,35 +89,49 @@ ALLOWED = {
     "notion": {"connect", "core"},
     "linear": {"connect", "core"},
     "hubspot": {"connect", "core"},
-    "tools": {"api", "core", "connect", "gmail", "drive", "outlook", "teams", "slack", "github", "notion", "linear", "hubspot"},
-    "agents": {"core", "tools"},
+    "tools": {"api", "core", "connect"} | SERVICES,
+    "mcp": {"core", "tools"},
     "devices": {"api", "core", "settings"},
     "smarthome": {"api", "core"},
-    "web": {"api", "agents", "devices", "calendars", "core", "settings"},
-    "cli": {"api", "agents", "web", "devices", "smarthome", "core", "messages", "calendars", "settings",
-            "connect", "tools", "gmail", "drive", "outlook", "teams"},
+    "web": {"api", "tools", "devices", "calendars", "core", "settings"},
+    "cli": {"api", "mcp", "tools", "web", "devices", "smarthome", "core", "messages", "calendars", "settings"},
 }
 
 
 def _component(path):
     parts = path.relative_to(PACKAGE).parts
-    return parts[0].removesuffix(".py") if len(parts) > 1 or parts[0] == "api.py" else None
+    if parts[0] == "tools" and len(parts) > 2 and parts[1] in SERVICES | {"connect"}:
+        return parts[1]
+    if len(parts) == 1:
+        name = parts[0].removesuffix(".py")
+        return name if name in {"api", "mcp"} else None
+    return parts[0].removesuffix(".py")
+
+
+def _label(parts):
+    if not parts:
+        return None
+    if parts[0] == "tools" and len(parts) > 1 and parts[1] in SERVICES | {"connect"}:
+        return parts[1]
+    return parts[0].removesuffix(".py")
 
 
 def _imported_components(path):
     import ast
     tree = ast.parse(path.read_text())
-    here = path.relative_to(PACKAGE).parts[:-1]
+    here = list(path.relative_to(PACKAGE).parts[:-1])
     found = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.level:
-            base = list(here[: len(here) - (node.level - 1)]) if node.level > 1 else list(here)
-            target = base + (node.module.split(".") if node.module else [])
-            names = [target[0]] if target else [a.name for a in node.names]
-            found |= {n.removesuffix(".py") for n in names}
+            up = node.level - 1
+            base = here[: len(here) - up] if up <= len(here) else []
+            if node.module:
+                found.add(_label(base + node.module.split(".")))
+            else:
+                found.update(_label(base + [alias.name]) for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and (node.module or "").startswith("whenfree."):
-            found.add(node.module.split(".")[1])
-    return found & set(ALLOWED)
+            found.add(_label(node.module.split(".")[1:]))
+    return {name for name in found if name} & set(ALLOWED)
 
 
 PACKAGE = pathlib.Path(__file__).parent.parent / "src" / "whenfree"
@@ -127,4 +142,8 @@ def test_components_depend_only_on_what_they_may(path):
     me = _component(path)
     if me is None:
         return                                     # __init__.py, __main__.py at the top
-    assert _imported_components(path) - ALLOWED[me] - {me} == set()
+    imported = _imported_components(path)
+    assert imported - ALLOWED[me] - {me} == set()
+    # The registry is the one file that may name a service. Calendar code and sign-in may not.
+    if me == "tools" and path.name != "__init__.py":
+        assert not imported & SERVICES

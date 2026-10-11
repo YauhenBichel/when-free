@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from ..connect import http, schema, session, text
-from ..core.errors import Problem
+from ...core.errors import Problem
 
 ACCOUNT = "linear"
 SCOPES = ()
