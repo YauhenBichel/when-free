@@ -10,14 +10,22 @@ from __future__ import annotations
 import json
 import sys
 
-from .. import __version__, api
-from . import tools
+from .. import __version__
+from ..core.errors import Problem
+from ..tools import registry as tools
 
 PROTOCOLS = ("2025-06-18", "2025-03-26", "2024-11-05")       # newest first
 
-INSTRUCTIONS = ("Use free_slots to find when the user is free before proposing or confirming a time. "
-                "It reads the user's calendars and never changes them. Pass explicit dates when you know them. "
-                "If it returns an error, tell the user what it says: do not guess availability.")
+INSTRUCTIONS = (
+    "when-free is an MCP server. It offers tools and does nothing else. "
+    "Use free_slots to find when the user is free before proposing or confirming a time. "
+    "It reads the user's calendars and never changes them. Pass explicit dates when you know them. "
+    "If it returns an error, tell the user what it says: do not guess availability. "
+    "The other tools reach a service only when the user asked to use that service. "
+    "gmail_draft and outlook_draft save a draft and do not send it. "
+    "slack_post, teams_post and github_comment do send. "
+    "If a tool says a service is not connected, tell the user to run whenfree connect for it. Do not guess."
+)
 
 
 def _result(id_, result: dict) -> dict:
@@ -46,7 +54,7 @@ def _tools_call(params: dict, config_path: str | None) -> dict:
     name, arguments = params.get("name"), params.get("arguments") or {}
     try:
         text, data = tools.call(name, arguments, config_path=config_path)
-    except api.Problem as e:
+    except Problem as e:
         # A tool that could not do its job is a result the model can read and act on, not a protocol error.
         return {"content": [{"type": "text", "text": str(e)}], "isError": True}
     except Exception as e:                            # never take the server down, never leak a traceback

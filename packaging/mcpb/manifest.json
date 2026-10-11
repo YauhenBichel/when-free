@@ -46,18 +46,37 @@
     }
   },
   "tools": [
-    {
-      "name": "free_slots",
-      "description": "Free time per day for the days asked about, from explicit dates, a range, or a message."
-    },
-    {
-      "name": "status",
-      "description": "Whether you are free right now, until when, and your next free slot. No event titles."
-    },
-    {
-      "name": "check_calendars",
-      "description": "Whether each calendar can be read, with event counts. No details, no addresses."
-    }
+    {"name": "free_slots", "description": "Free time per day for the days asked about, from explicit dates, a range, or a message."},
+    {"name": "status", "description": "Whether you are free right now, until when, and your next free slot. No event titles."},
+    {"name": "check_calendars", "description": "Whether each calendar can be read, with event counts. No details, no addresses."},
+    {"name": "connected_accounts", "description": "Which services are signed in. No tokens."},
+    {"name": "gmail_search", "description": "Search Gmail. Does not send mail."},
+    {"name": "gmail_read", "description": "Read one Gmail message."},
+    {"name": "gmail_thread", "description": "Read one Gmail thread."},
+    {"name": "gmail_labels", "description": "List Gmail labels."},
+    {"name": "gmail_draft", "description": "Save a Gmail draft. It does not send."},
+    {"name": "drive_search", "description": "Search Google Drive by file name. Read only."},
+    {"name": "drive_read", "description": "Read one Drive file as text. Read only."},
+    {"name": "outlook_search", "description": "Search Outlook mail. Does not send."},
+    {"name": "outlook_read", "description": "Read one Outlook message."},
+    {"name": "outlook_draft", "description": "Save an Outlook draft. It does not send."},
+    {"name": "teams_joined", "description": "List joined Teams."},
+    {"name": "teams_channels", "description": "List channels in one Team."},
+    {"name": "teams_history", "description": "Read recent messages in a Teams channel."},
+    {"name": "teams_post", "description": "Post a message to a Teams channel."},
+    {"name": "slack_channels", "description": "List Slack channels the bot can see."},
+    {"name": "slack_history", "description": "Read recent messages in a Slack channel."},
+    {"name": "slack_post", "description": "Post a message to Slack as the bot."},
+    {"name": "github_repos", "description": "List GitHub repositories. Does not push."},
+    {"name": "github_issues", "description": "List open issues. Pull requests are left out."},
+    {"name": "github_issue", "description": "Read one GitHub issue."},
+    {"name": "github_comment", "description": "Post a comment on a GitHub issue. Does not push."},
+    {"name": "notion_search", "description": "Search Notion. Read only."},
+    {"name": "notion_read", "description": "Read the text of one Notion page. Read only."},
+    {"name": "linear_issues", "description": "List recent Linear issues. Read only."},
+    {"name": "linear_issue", "description": "Read one Linear issue. Read only."},
+    {"name": "hubspot_contacts", "description": "List or search HubSpot contacts. Read only."},
+    {"name": "hubspot_deals", "description": "List or search HubSpot deals. Read only."}
   ],
   "user_config": {
     "calendars": {

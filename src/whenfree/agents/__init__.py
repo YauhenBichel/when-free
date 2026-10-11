@@ -1,1 +1,1 @@
-"""What AI agents see: the tool definitions, and the MCP server that offers them."""
+"""The MCP server. The tools it calls live in the tools component."""
