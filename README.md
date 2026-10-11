@@ -202,7 +202,7 @@ For Cursor and other MCP clients, add this to their server list. `uvx` fetches w
 }
 ```
 
-If you installed it with `uv tool install`, use `"command": "whenfree", "args": ["mcp"]` instead. It's also listed in the [MCP registry](https://registry.modelcontextprotocol.io) as `io.github.YauhenBichel/when-free`.
+If you installed it with `uv tool install`, use `"command": "whenfree", "args": ["mcp"]` instead. It's also listed in the [MCP registry](https://registry.modelcontextprotocol.io) as `io.github.YauhenBichel/when-free`, on [mcprush](https://mcprush.com/yauhenbichel/when-free-mcp) and in the [M8ven Trust Index](https://m8ven.ai/mcp/yauhenbichel/when-free).
 
 Then just ask: *"Here's the recruiter's message. Which of those times can I do?"* The assistant calls `free_slots` and answers from your real calendar.
 
