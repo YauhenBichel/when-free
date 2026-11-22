@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 0.5.0 (2026-11-22)
+
+Read the request where it arrived: mail, chat and work tools through the MCP server.
+
+- `whenfree connect <service>` signs in Google (Gmail, Drive), Microsoft (Outlook, Teams), Slack, GitHub, Notion,
+  Linear or HubSpot. Without a name it says which are signed in. Tokens stay on this computer.
+- Google and Microsoft sign in through the browser with your own OAuth client file; the others take a pasted token.
+  Teams history and posting may need an admin to approve the app.
+- Once a service is signed in, the MCP server offers its tools, such as `gmail_search`, `outlook_read`,
+  `slack_history` and `github_issues`, plus `connected_accounts`.
+- `gmail_draft` and `outlook_draft` save a draft and never send it. `slack_post` and `teams_post` do send, so
+  agents use them only when you ask them to post.
+- Mail and chat tools are MCP only: `whenfree serve` still offers just `free_slots`, `status` and `check_calendars`.
+- The server tells clients to read the request with tools and to give only the slots `free_slots` returned.
+- `.mcp.json` and `.cursor/mcp.json` let Claude Code and Cursor start when-free from a checkout.
+
 ## 0.4.1 (2026-10-09)
 
 Friendlier in Claude Code.
