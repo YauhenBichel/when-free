@@ -30,6 +30,7 @@ class Config:
     weekends: bool = False
     all_day_busy: bool = False
     days_ahead: int = 7
+    max_range_days: int = 366              # the longest stretch answered in one go
     me: list[str] = field(default_factory=list)
     calendars: list[Calendar] = field(default_factory=list)
     extract_command: list[str] | None = None
@@ -46,6 +47,7 @@ buffer_minutes = 15              # kept free before and after every event
 weekends = false
 all_day_busy = false             # true: whole-day events block the day (holidays), unless marked Free
 days_ahead = 7                   # working days shown when you give no dates
+# max_range_days = 366           # the longest stretch of days answered in one go
 
 # Your addresses. An invitation you declined does not block your time.
 me = []                          # e.g. ["you@example.com"]
@@ -105,7 +107,8 @@ def load(path: pathlib.Path | str | None = None) -> Config:
         except tomllib.TOMLDecodeError as e:
             raise ConfigError(f"{path}: {e}") from None
         for key, kind in (("timezone", str), ("hours", str), ("min_minutes", int), ("buffer_minutes", int),
-                          ("weekends", bool), ("all_day_busy", bool), ("days_ahead", int)):
+                          ("weekends", bool), ("all_day_busy", bool), ("days_ahead", int),
+                          ("max_range_days", int)):
             if key in data:
                 if not isinstance(data[key], kind) or (kind is int and isinstance(data[key], bool)):
                     raise ConfigError(f"{path}: {key} should be {kind.__name__}")
@@ -133,6 +136,8 @@ def load(path: pathlib.Path | str | None = None) -> Config:
             raise ConfigError(f"unknown time zone {cfg.timezone!r}; use a name like Europe/London") from None
     if cfg.min_minutes < 1 or cfg.buffer_minutes < 0 or cfg.days_ahead < 1:
         raise ConfigError("min_minutes and days_ahead must be at least 1, and buffer_minutes cannot be negative")
+    if cfg.max_range_days < 1:
+        raise ConfigError("max_range_days must be at least 1")
     return cfg
 
 

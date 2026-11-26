@@ -61,3 +61,13 @@ def test_init_writes_a_private_file_once(tmp_path):
     assert config.load(path).calendars == []                 # the empty url in the template is not a calendar
     with pytest.raises(config.ConfigError):
         config.write_template(path)
+
+
+def test_the_longest_range_is_a_setting(tmp_path):
+    assert config.load(tmp_path / "missing.toml").max_range_days == 366
+    path = tmp_path / "config.toml"
+    path.write_text("max_range_days = 30\n")
+    assert config.load(path).max_range_days == 30
+    path.write_text("max_range_days = 0\n")
+    with pytest.raises(config.ConfigError):
+        config.load(path)

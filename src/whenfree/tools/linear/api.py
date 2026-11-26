@@ -47,5 +47,5 @@ def issue(arguments: dict, config_path: str | None):
 
 TOOLS = [
     (schema.tool("linear_issues", "List recent Linear issues. Read only.", {"max": schema.integer("How many to return. Default 8, at most 20.")}), issues),
-    (schema.tool("linear_issue", "Read one Linear issue. Read only.", {"id": schema.string("The issue identifier, such as ENG-1.")}), issue),
+    (schema.tool("linear_issue", "Read one Linear issue. Read only.", {"id": schema.string("The issue identifier, such as ENG-1.")}, ("id",)), issue),
 ]

@@ -77,7 +77,7 @@ def comment(arguments: dict, config_path: str | None):
 
 TOOLS = [
     (schema.tool("github_repos", "List the user's GitHub repositories. Does not push or change them.", {"max": schema.integer("How many to return. Default 8, at most 20.")}), repos),
-    (schema.tool("github_issues", "List open issues on one repository. Pull requests are left out.", {"owner": schema.string("The owner."), "repo": schema.string("The repository."), "max": schema.integer("How many to return. Default 8, at most 20.")}), issues),
-    (schema.tool("github_issue", "Read one GitHub issue.", {"owner": schema.string("The owner."), "repo": schema.string("The repository."), "number": schema.integer("The issue number.")}), issue),
-    (schema.tool("github_comment", "Post a comment on a GitHub issue. This sends the comment. It does not push code.", {"owner": schema.string("The owner."), "repo": schema.string("The repository."), "number": schema.integer("The issue number."), "body": schema.string("The comment.")}), comment),
+    (schema.tool("github_issues", "List open issues on one repository. Pull requests are left out.", {"owner": schema.string("The owner."), "repo": schema.string("The repository."), "max": schema.integer("How many to return. Default 8, at most 20.")}, ("owner", "repo")), issues),
+    (schema.tool("github_issue", "Read one GitHub issue.", {"owner": schema.string("The owner."), "repo": schema.string("The repository."), "number": schema.integer("The issue number.")}, ("owner", "repo", "number")), issue),
+    (schema.tool("github_comment", "Post a comment on a GitHub issue. This sends the comment. It does not push code.", {"owner": schema.string("The owner."), "repo": schema.string("The repository."), "number": schema.integer("The issue number."), "body": schema.string("The comment.")}, ("owner", "repo", "number", "body")), comment),
 ]

@@ -48,6 +48,6 @@ def post(arguments: dict, config_path: str | None):
 
 TOOLS = [
     (schema.tool("slack_channels", "List Slack channels the bot can see.", {}), channels),
-    (schema.tool("slack_history", "Read recent messages in a Slack channel.", {"channel": schema.string("The channel id from slack_channels."), "max": schema.integer("How many to return. Default 8, at most 20.")}), history),
-    (schema.tool("slack_post", "Post a message to a Slack channel as the bot. This sends the message.", {"channel": schema.string("The channel id."), "text": schema.string("The message to post.")}), post),
+    (schema.tool("slack_history", "Read recent messages in a Slack channel.", {"channel": schema.string("The channel id from slack_channels."), "max": schema.integer("How many to return. Default 8, at most 20.")}, ("channel",)), history),
+    (schema.tool("slack_post", "Post a message to a Slack channel as the bot. This sends the message.", {"channel": schema.string("The channel id."), "text": schema.string("The message to post.")}, ("channel", "text")), post),
 ]

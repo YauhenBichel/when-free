@@ -233,7 +233,7 @@ def make_handler(token: str, config_path: str | None, origins: list[str], base_u
             try:
                 text, data = tools.call(name, arguments, config_path=config_path, reader=reader)
             except api.Problem as e:
-                return self._send(400, {"ok": False, "error": str(e)})
+                return self._send(400, {"ok": False, "error": tools.short(str(e))})
             except Exception as e:                    # never a traceback, never an address
                 return self._send(500, {"ok": False, "error": f"when-free failed: {e.__class__.__name__}"})
             self._send(200, {"ok": True, "text": text, "data": data})
@@ -272,14 +272,20 @@ def make_handler(token: str, config_path: str | None, origins: list[str], base_u
         do_HEAD = do_GET
 
         def do_POST(self):
-            length = int(self.headers.get("Content-Length") or 0)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if length < 0:                            # reading "-1" bytes would wait for the caller to hang up
+                self.close_connection = True
+                return self._send(400, {"ok": False, "error": "Content-Length must be a number, zero or more"})
             if length > MAX_BODY:
                 return self._send(413, {"ok": False, "error": "the request is too large"})
             raw = self.rfile.read(length) if length else b""
             try:
                 body = json.loads(raw) if raw.strip() else {}
-            except (json.JSONDecodeError, UnicodeDecodeError) as e:
-                return self._send(400, {"ok": False, "error": f"the body is not JSON: {getattr(e, 'msg', e)}"})
+            except (ValueError, RecursionError) as e:   # not JSON, not UTF-8, or nested too deep to read
+                return self._send(400, {"ok": False, "error": f"the body is not JSON: {getattr(e, 'msg', None) or e.__class__.__name__}"})
             self._route(body)
 
         def do_OPTIONS(self):                         # a browser asking before a cross-origin call
@@ -293,11 +299,17 @@ def make_handler(token: str, config_path: str | None, origins: list[str], base_u
     return Handler
 
 
+class Server(ThreadingHTTPServer):
+    # The default of 5 waiting connections turns a short burst (a dashboard reloading, several devices at once)
+    # into refused connections. Each request still gets its own thread.
+    request_queue_size = 128
+
+
 def make_server(host: str = "127.0.0.1", port: int = PORT, token: str = "", config_path: str | None = None,
                 origins: list[str] | None = None, *, tls: tuple[str, str] | None = None,
                 reader=None, public_host: str | None = None) -> ThreadingHTTPServer:
     """`public_host` is the name or address devices use, when it differs from the one listened on (0.0.0.0)."""
-    server = ThreadingHTTPServer((host, port), None)
+    server = Server((host, port), None)
     if tls:
         context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         context.minimum_version = ssl.TLSVersion.TLSv1_2

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from ..core.errors import Problem
+from ..core.errors import Problem, clip
 from . import accounts, calendar, signin
 from . import drive, github, gmail, hubspot, linear, notion, outlook, slack, teams
 from .model import Context, Tool
@@ -57,14 +57,24 @@ TOOLS = [item.spec for item in REGISTRY.values()]
 def get(name: str) -> Tool:
     found = REGISTRY.get(name)
     if found is None:
-        raise Problem(f"unknown tool {name!r}. Known: {', '.join(REGISTRY)}")
+        raise Problem(f"unknown tool {clip(name, 40)}. Known: {', '.join(REGISTRY)}")
     return found
+
+
+MAX_ERROR = 2000
+
+
+def short(text: str) -> str:
+    """An error for a caller, never longer than a screen: what was sent is not handed back whole."""
+    return text if len(text) <= MAX_ERROR else text[:MAX_ERROR] + "…"
 
 
 def call(name: str, arguments: dict | None = None, *, config_path: str | None = None,
          reader: Callable[[str], str] | None = None) -> tuple[str, dict]:
     """Run a tool. Returns (text for the model, the same answer as data). Raises Problem."""
-    found = get(name)
+    found = get(name) if isinstance(name, str) else None
+    if found is None:
+        raise Problem(f"the tool name must be text. Known: {', '.join(REGISTRY)}")
     arguments = arguments or {}
     found.validate(arguments)
     return found.run(arguments, Context(config_path, reader))

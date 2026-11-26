@@ -4,6 +4,24 @@
 - `npx -y when-free mcp`: an npm package of the same name and version, for MCP clients that start servers with `npx`. It is a launcher that runs `uvx when-free==<version>`, so `uv` (or pipx) must be installed. Published with each release from now on.
 
 - README: how to connect from Grok Build and other MCP clients, and a note for models without MCP support.
+- A calendar event with a broken repeat rule (such as `BYMONTHDAY=0`) no longer makes the answer wait for ever.
+  Its first date is counted and a note says so.
+- An event whose time cannot be read is left out and named in a note, with its calendar, instead of stopping the
+  whole answer. `free_slots`, `check_calendars` and `whenfree add` all show these notes (`notes` in the data).
+- Days the clocks change: events written in another time zone, repeating events and opening hours that do not
+  exist that day are now placed by real time. Before, a slot could be offered on top of an event.
+- Dates: "Monday 9-5" and "Friday 2-4pm" are that weekday, not the 9th or the 2nd. "Dec 2, 3, 4", "Dec 2-4" and
+  "2 and 3 December" give every day. A written year is kept. "last Friday" is the one that has gone. A number
+  that looks like a date and was not read is named in a note.
+- A range longer than `max_range_days` (new setting, 366 by default) is refused with a clear message, as is a date
+  too far away to count. A range of only Saturday and Sunday says to add `--weekends`.
+- The buffer now counts events that end just before, or start just after, the days asked for.
+- A time "now" with seconds starts at the next quarter hour, not the one just gone.
+- Large calendars are much faster: a search no longer reads every event for every day.
+- The MCP server answers a wrong message with an error and keeps running. It used to stop on some of them.
+- `whenfree serve` accepts many callers at once, answers a wrong `Content-Length` with 400, and no longer sends
+  a long wrong value back whole in an error.
+- Tools say which arguments they need (`required` in their schema).
 
 ## 0.5.0 (2026-11-22)
 

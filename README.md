@@ -304,6 +304,7 @@ All optional except a calendar. They live in `~/.config/when-free/config.toml`, 
 | `weekends` | `false` | `--weekends` | Include Saturday and Sunday in a date range |
 | `all_day_busy` | `false` | `--all-day-busy` | Whole-day events block the day |
 | `days_ahead` | `7` | | Working days shown when you give no dates |
+| `max_range_days` | `366` | | The longest range of dates one question may cover |
 | `me` | `[]` | | Your email addresses, so invitations you declined don't block |
 | `[[calendar]]` | | `--calendar` | `name` and `url` or `path`. One block per calendar; `whenfree add` writes them |
 | `[extract] command` | none | `--no-extract` | A command that reads a message with your own model |

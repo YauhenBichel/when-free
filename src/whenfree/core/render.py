@@ -48,7 +48,7 @@ def answer(result: dict, busy: bool = False) -> str:
 
 def calendars_checked(data: dict) -> list[str]:
     return [f"ok  {c['name']}: {c['events']} events, {c['blocking_next_14_days']} block time in the next 14 days"
-            for c in data["calendars"]]
+            for c in data["calendars"]] + [f"Note: {n}" for n in data.get("notes", [])]
 
 
 def _hhmm(iso: str) -> str:

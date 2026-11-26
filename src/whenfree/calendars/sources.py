@@ -21,6 +21,7 @@ URL = ("http://", "https://", "webcal://")
 NO_SLOTS = "No slots were printed, because without it busy time would look free."
 
 Reader = Callable[[str], str]
+MAX_NOTES = 20          # per calendar; a feed with a thousand broken events gets a count, not a thousand lines
 
 
 def is_address(source: str) -> bool:
@@ -55,9 +56,21 @@ def _check_is_calendar(name: str, text: str) -> None:
     raise Problem(f"the calendar '{name}' did not return iCalendar data; check its address")
 
 
-def load(calendars: list[Calendar], tz, *, consequence: str = NO_SLOTS,
-         reader: Reader | None = None) -> list[tuple[str, list[ical.Event]]]:
-    """(name, events) for every calendar, or `Problem` naming the first one that could not be read."""
+def named(calendar: str, problems: list[str]) -> list[str]:
+    """Problems found in one calendar, each saying which calendar, and no more than `MAX_NOTES` of them."""
+    out = [f"calendar '{calendar}': {p}" for p in problems[:MAX_NOTES]]
+    if len(problems) > MAX_NOTES:
+        out.append(f"calendar '{calendar}': {len(problems) - MAX_NOTES} more events have the same kind of problem")
+    return out
+
+
+def load(calendars: list[Calendar], tz, *, consequence: str = NO_SLOTS, reader: Reader | None = None,
+         notes: list[str] | None = None) -> list[tuple[str, list[ical.Event]]]:
+    """(name, events) for every calendar, or `Problem` naming the first one that could not be read.
+
+    A calendar that can be read may still hold an event that cannot: that event is left out, and `notes`, when
+    given, gets a line naming the calendar and the event. The rest of the calendar still counts.
+    """
     reader = reader or read
     out = []
     for cal in calendars:
@@ -68,5 +81,8 @@ def load(calendars: list[Calendar], tz, *, consequence: str = NO_SLOTS,
             raise Problem(f"could not read the calendar '{cal.name}' ({reason}). {consequence}"
                           f"{_hint(cal.source, e)}") from None
         _check_is_calendar(cal.name, text)
-        out.append((cal.name, ical.parse(text, tz)))
+        problems: list[str] = []
+        out.append((cal.name, ical.parse(text, tz, problems)))
+        if notes is not None:
+            notes += named(cal.name, problems)
     return out

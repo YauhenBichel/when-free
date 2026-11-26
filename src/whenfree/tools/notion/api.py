@@ -52,6 +52,6 @@ def read(arguments: dict, config_path: str | None):
 
 
 TOOLS = [
-    (schema.tool("notion_search", "Search the user's Notion. Read only.", {"query": schema.string("Words to search for."), "max": schema.integer("How many to return. Default 8, at most 20.")}), search),
-    (schema.tool("notion_read", "Read the text of one Notion page or block. Read only.", {"id": schema.string("The id notion_search returned.")}), read),
+    (schema.tool("notion_search", "Search the user's Notion. Read only.", {"query": schema.string("Words to search for."), "max": schema.integer("How many to return. Default 8, at most 20.")}, ("query",)), search),
+    (schema.tool("notion_read", "Read the text of one Notion page or block. Read only.", {"id": schema.string("The id notion_search returned.")}, ("id",)), read),
 ]

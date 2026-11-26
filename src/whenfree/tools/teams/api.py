@@ -69,7 +69,7 @@ def post(arguments: dict, config_path: str | None):
 
 TOOLS = [
     (schema.tool("teams_joined", "List the Teams the user has joined.", {}), joined),
-    (schema.tool("teams_channels", "List channels in one Team.", {"team": schema.string("The team id from teams_joined.")}), channels),
-    (schema.tool("teams_history", "Read recent messages in a Teams channel.", {"team": schema.string("The team id."), "channel": schema.string("The channel id."), "max": schema.integer("How many to return. Default 8, at most 20.")}), history),
-    (schema.tool("teams_post", "Post a message to a Teams channel. This sends the message.", {"team": schema.string("The team id."), "channel": schema.string("The channel id."), "text": schema.string("The message to post.")}), post),
+    (schema.tool("teams_channels", "List channels in one Team.", {"team": schema.string("The team id from teams_joined.")}, ("team",)), channels),
+    (schema.tool("teams_history", "Read recent messages in a Teams channel.", {"team": schema.string("The team id."), "channel": schema.string("The channel id."), "max": schema.integer("How many to return. Default 8, at most 20.")}, ("team", "channel")), history),
+    (schema.tool("teams_post", "Post a message to a Teams channel. This sends the message.", {"team": schema.string("The team id."), "channel": schema.string("The channel id."), "text": schema.string("The message to post.")}, ("team", "channel", "text")), post),
 ]

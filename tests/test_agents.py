@@ -155,3 +155,144 @@ def test_mcp_protocol_errors():
 def test_mcp_writes_only_protocol_lines(capsys):
     talk({"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "free_slots", "arguments": {}}})
     assert capsys.readouterr().out == ""                             # nothing leaks to the real stdout
+
+
+# ---------- calendars and questions that are wrong, or strange ----------
+
+def calendar_with(tmp_path, *lines, name="odd.ics"):
+    path = tmp_path / name
+    path.write_text("BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:x\r\nSUMMARY:Board meeting\r\n" + "\r\n".join(lines)
+                    + "\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:ok\r\nSUMMARY:Fine\r\nDTSTART:20261007T100000Z\r\n"
+                      "DTEND:20261007T110000Z\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n")
+    return str(path)
+
+
+def test_an_event_that_cannot_be_read_is_named_and_the_rest_still_answers(tmp_path, monkeypatch):
+    odd = calendar_with(tmp_path, "DTSTART:garbage", "DTEND:20261007T150000Z")
+    monkeypatch.setenv("WHENFREE_CALENDARS", odd)
+    text, data = tools.call("free_slots", {"days": "2026-10-07"})
+    assert data["days"][0]["free"] == [["12:15", "16:00"]]         # the event that could be read still blocks
+    note, = data["notes"]
+    assert "calendar 'calendar 1'" in note and "'Board meeting'" in note and "DTSTART" in note
+    assert f"Note: {note}" in text
+    text, data = tools.call("check_calendars", {})
+    assert data["notes"] == [note] and f"Note: {note}" in text
+
+
+def test_a_rule_that_names_no_day_does_not_hang_and_blocks_its_first_date(tmp_path, monkeypatch):
+    odd = calendar_with(tmp_path, "DTSTART:20261006T100000Z", "DTEND:20261006T110000Z", "RRULE:FREQ=MONTHLY;BYMONTHDAY=0")
+    monkeypatch.setenv("WHENFREE_CALENDARS", odd)
+    result = api.find_free(api.Query(days="2026-10-06"))
+    assert result["days"][0]["free"] == [["12:15", "16:00"]]
+    assert "calendar 'calendar 1'" in result["notes"][0] and "only its first date is counted" in result["notes"][0]
+
+
+def test_the_buffer_reaches_across_midnight(tmp_path, monkeypatch):
+    late = calendar_with(tmp_path, "DTSTART:20261005T220000Z", "DTEND:20261005T225500Z")      # ends 23:55 in London
+    monkeypatch.setenv("WHENFREE_CALENDARS", late)
+    result = api.find_free(api.Query(days="2026-10-06", hours="00:00-03:00", buffer_minutes=15, min_minutes=15))
+    assert result["days"][0]["free"] == [["00:10", "03:00"]]
+
+
+def test_a_range_too_long_to_answer_is_refused_with_the_setting_named(tmp_path, monkeypatch):
+    with pytest.raises(api.Problem) as e:
+        api.find_free(api.Query(end="9999-12-31"))
+    assert "max_range_days" in str(e.value) and "366" in str(e.value)
+    with pytest.raises(api.Problem):
+        api.find_free(api.Query(days="9999-12-31"))                 # the last day there is: no day after it
+    with pytest.raises(api.Problem) as e:
+        api.find_free(api.Query(days="2026-10-07, 2028-10-07"))
+    assert "max_range_days" in str(e.value)
+    settings = pathlib.Path(tmp_path / "config.toml")
+    settings.write_text(settings.read_text().replace("hours =", "max_range_days = 800\nhours ="))
+    assert len(api.find_free(api.Query(end="2028-01-31"))["days"]) > 300
+
+
+def test_a_range_of_weekend_days_says_so():
+    with pytest.raises(api.Problem) as e:
+        api.find_free(api.Query(start="2026-10-03", end="2026-10-04"))
+    assert "Saturday and Sunday" in str(e.value) and "--weekends" in str(e.value) and "past" not in str(e.value)
+    assert len(api.find_free(api.Query(start="2026-10-03", end="2026-10-04", weekends=True))["days"]) == 2
+
+
+def test_part_of_a_date_that_was_not_read_is_a_note_not_a_silence():
+    text, data = tools.call("free_slots", {"days": "5 Oct, 7"})
+    assert [d["date"] for d in data["days"]] == ["2026-10-05"]
+    assert "'7'" in data["notes"][0] and "was not read" in data["notes"][0] and "Note: " in text
+    assert tools.call("free_slots", {"days": "Oct 5, 6, 7"})[1]["notes"] == []
+
+
+def test_last_friday_is_refused_as_past_not_answered_for_next_friday():
+    with pytest.raises(api.Problem) as e:
+        api.find_free(api.Query(days="last Friday"))
+    assert "past" in str(e.value)
+
+
+def test_what_was_sent_is_not_sent_back_whole():
+    with pytest.raises(api.Problem) as e:
+        api.find_free(api.Query(days="A" * 100_000))
+    assert len(str(e.value)) < 400
+    with pytest.raises(api.Problem) as e:
+        tools.call("free_slots", {"B" * 100_000: 1})
+    assert len(str(e.value)) < 400
+    with pytest.raises(api.Problem) as e:
+        tools.call("C" * 100_000, {})
+    assert "C" * 60 not in str(e.value)
+
+
+# ---------- an MCP client that sends the wrong thing ----------
+
+def call(id_=1, **extra):
+    return {"jsonrpc": "2.0", "id": id_, **extra}
+
+
+@pytest.mark.parametrize("message, code", [
+    (call(method="tools/call", params=[1, 2]), -32602),
+    (call(method="tools/call", params="free_slots"), -32602),
+    (call(method="initialize", params=["2025-06-18"]), -32602),
+    (call(method="tools/call", params={"name": 5}), -32602),
+    (call(method="tools/call", params={"name": ["free_slots"]}), -32602),
+    (call(method="tools/call", params={"arguments": {}}), -32602),
+    (call(method=["tools/list"]), -32600),
+    (call(method={"a": 1}), -32600),
+    (call(method=5), -32600),
+    (call(id_={"a": 1}, method="ping"), -32600),
+    (call(id_=[1], method="ping"), -32600),
+])
+def test_mcp_answers_a_wrong_message_with_an_error_and_stays_up(message, code):
+    wrong, after = talk(message, call(id_=2, method="ping"))
+    assert wrong["error"]["code"] == code
+    assert after == {"jsonrpc": "2.0", "id": 2, "result": {}}        # the next message is still answered
+
+
+def test_mcp_survives_a_message_nested_too_deep_and_bytes_that_are_not_text():
+    stdout = io.StringIO()
+    stdin = io.TextIOWrapper(io.BytesIO(("[" * 100_000 + "\n").encode() + b'\xff\xfe{"jsonrpc"\n'
+                                        + json.dumps(call(method="ping")).encode() + b"\n"),
+                             encoding="utf-8", errors="replace")
+    assert mcp.serve(stdin, stdout) == 0
+    deep, garbled, ping = [json.loads(line) for line in stdout.getvalue().splitlines()]
+    assert deep["error"]["code"] == -32600 and garbled["error"]["code"] == -32700 and ping["result"] == {}
+
+
+def test_mcp_survives_a_tool_that_breaks_in_a_new_way(monkeypatch):
+    def broken(params, config_path):
+        raise RuntimeError("address=https://calendar.example/SECRET")
+    monkeypatch.setitem(mcp.METHODS, "ping", broken)
+    wrong, after = talk(call(method="ping"), call(id_=2, method="tools/list"))
+    assert wrong["error"]["code"] == -32603 and "SECRET" not in json.dumps(wrong)
+    assert "tools" in after["result"]
+
+
+def test_mcp_does_not_echo_a_huge_argument():
+    answer, = talk(call(method="tools/call", params={"name": "free_slots", "arguments": {"days": "A" * 1_000_000}}))
+    assert answer["result"]["isError"] and len(json.dumps(answer)) < 2000
+
+
+def test_tools_declare_the_arguments_they_cannot_work_without():
+    required = {t["name"]: t["inputSchema"].get("required", []) for t in tools.TOOLS}
+    assert required["gmail_draft"] == ["to", "subject", "body"] and required["slack_post"] == ["channel", "text"]
+    assert required["github_comment"] == ["owner", "repo", "number", "body"] and required["notion_read"] == ["id"]
+    assert required["free_slots"] == [] and required["status"] == [] and required["slack_channels"] == []
+    for t in tools.TOOLS:                                           # never a name the schema does not describe
+        assert set(required[t["name"]]) <= set(t["inputSchema"]["properties"])

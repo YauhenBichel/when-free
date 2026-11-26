@@ -24,7 +24,7 @@ from .calendars import sources
 from .calendars.sources import NO_SLOTS, URL  # noqa: F401
 from .core import ical, slots
 from .core import status as standing
-from .core.errors import Problem
+from .core.errors import Problem, clip
 from .core.render import label, lines  # noqa: F401  (kept here for existing callers)
 from .messages import dates, extract
 
@@ -71,7 +71,7 @@ def _timezone(name: str | None, cfg: settings.Config) -> ZoneInfo:
     try:
         return ZoneInfo(name)
     except Exception:
-        raise Problem(f"unknown time zone {name!r}; use a name like Europe/London") from None
+        raise Problem(f"unknown time zone {clip(name)}; use a name like Europe/London") from None
 
 
 def _hours(value: str) -> tuple[dt.time, dt.time]:
@@ -100,6 +100,16 @@ class _Chosen:
     hours: tuple[dt.time, dt.time] | None = None    # read from the message, if it stated them
     minutes: int | None = None                      # the meeting length, if a model read one
     read_by: str | None = None                      # how a message was read
+    notes: list[str] = field(default_factory=list)  # what the reader should check
+
+
+def _not_read(unread: list[str]) -> list[str]:
+    """Never answer for fewer days than were asked about without saying so."""
+    if not unread:
+        return []
+    parts = ", ".join(clip(u, 20) for u in unread[:5])
+    return [f"{parts} looked like part of a date and was not read. Only the days listed here were checked; "
+            "write the others out, like \"2 Dec, 3 Dec\" or 2026-12-02"]
 
 
 def _from_message(q: Query, cfg: settings.Config, today: dt.date) -> _Chosen:
@@ -111,17 +121,19 @@ def _from_message(q: Query, cfg: settings.Config, today: dt.date) -> _Chosen:
             hours = None
         chosen = _Chosen(got["days"], hours, got["minutes"], "your model")
     else:
-        chosen = _Chosen(dates.parse_days(q.message, today), dates.parse_hours(q.message), None, "pattern matching")
+        days, unread = dates.read_days(q.message, today)
+        chosen = _Chosen(days, dates.parse_hours(q.message), None, "pattern matching", _not_read(unread))
     if not chosen.days:
         raise Problem("found no dates in the message. Give them explicitly: days \"Thu 1 Oct, Fri 2 Oct\"")
     return chosen
 
 
 def _listed(q: Query, cfg: settings.Config, today: dt.date) -> _Chosen:
-    days = dates.parse_days(q.days, today)
+    days, unread = dates.read_days(q.days, today)
     if not days:
-        raise Problem(f"could not read any date from {q.days!r}. Examples: \"Thu 1 Oct, 5 Oct\", 2026-10-05, \"next week\"")
-    return _Chosen(days)
+        raise Problem(f"could not read any date from {clip(q.days)}. "
+                      "Examples: \"Thu 1 Oct, 5 Oct\", 2026-10-05, \"next week\"")
+    return _Chosen(days, notes=_not_read(unread))
 
 
 def _in_range(q: Query, cfg: settings.Config, today: dt.date) -> _Chosen:
@@ -133,15 +145,36 @@ def _in_range(q: Query, cfg: settings.Config, today: dt.date) -> _Chosen:
     weekends = q.weekends or cfg.weekends
     if last is None:                                  # the next working days
         days, d = [], first
-        while len(days) < cfg.days_ahead:
-            if weekends or d.weekday() < 5:
-                days.append(d)
-            d += dt.timedelta(days=1)
+        try:
+            while len(days) < cfg.days_ahead:
+                if weekends or d.weekday() < 5:
+                    days.append(d)
+                d += dt.timedelta(days=1)
+        except OverflowError:
+            raise Problem(TOO_FAR) from None
         return _Chosen(days)
     if last < first:
         raise Problem("the last day is before the first day")
+    _check_span(max(first, today), last, cfg)         # before a list of every day in it is built
     every = (first + dt.timedelta(days=i) for i in range((last - first).days + 1))
-    return _Chosen([d for d in every if weekends or d.weekday() < 5])
+    days = [d for d in every if weekends or d.weekday() < 5]
+    if not days and last >= today:
+        raise Problem(f"{first.isoformat()} to {last.isoformat()} has only Saturday and Sunday in it, and weekend "
+                      "days are left out. To include them: --weekends on the command line, \"weekends\": true "
+                      "in a tool call, or weekends = true in the settings file")
+    return _Chosen(days)
+
+
+TOO_FAR = "that date is too far ahead for a calendar to hold; ask about a nearer one"
+
+
+def _check_span(first: dt.date, last: dt.date, cfg: settings.Config) -> None:
+    """Refuse a stretch longer than `max_range_days`: every day of it is worked out, and that takes time."""
+    span = (last - first).days + 1
+    if span > cfg.max_range_days:
+        raise Problem(f"{first.isoformat()} to {last.isoformat()} is {span} days, and at most {cfg.max_range_days} "
+                      "are answered in one go. Ask about a shorter stretch, or raise max_range_days in the "
+                      "settings file")
 
 
 DayStrategy = Callable[[Query, settings.Config, dt.date], _Chosen]
@@ -170,6 +203,7 @@ class _Plan:
     all_day_busy: bool
     read_by: str | None
     calendars: list[settings.Calendar] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
 
 
 def _plan(q: Query, cfg: settings.Config) -> _Plan:
@@ -186,41 +220,53 @@ def _plan(q: Query, cfg: settings.Config) -> _Plan:
     days = [d for d in chosen.days if d >= now.date()]
     if not days:
         raise Problem("every date asked for is already in the past")
+    _check_span(min(days), max(days), cfg)
     opens, closes = asked_hours or chosen.hours or _hours(cfg.hours)
     if q.min_minutes is None and chosen.minutes:
         min_minutes = chosen.minutes
     return _Plan(tz, now, days, past, opens, closes, min_minutes, buffer_minutes,
-                 q.all_day_busy or cfg.all_day_busy, chosen.read_by, _calendars(q.calendars, cfg))
+                 q.all_day_busy or cfg.all_day_busy, chosen.read_by, _calendars(q.calendars, cfg), chosen.notes)
 
 
 # ---------- the answer ----------
 
 def _load_busy(calendars: list[settings.Calendar], tz, start: dt.date, end: dt.date, cfg: settings.Config,
-               all_day_busy: bool, reader) -> tuple[list[slots.Busy], list[str], int]:
-    """Busy blocks from every calendar between the start of `start` and the end of `end`."""
-    window_start = dt.datetime.combine(start, dt.time.min, tz)
-    window_end = dt.datetime.combine(end + dt.timedelta(days=1), dt.time.min, tz)
+               all_day_busy: bool, reader, buffer_minutes: int = 0) -> tuple[list[slots.Busy], list[str], int]:
+    """Busy blocks from every calendar between the start of `start` and the end of `end`.
+
+    The buffer reaches across midnight: an event that ends at 23:55 the evening before still takes the first
+    minutes of the day, so events that far outside the days are read too.
+    """
+    pad = dt.timedelta(minutes=buffer_minutes)
+    try:
+        window_start = dt.datetime.combine(start, dt.time.min, tz).astimezone(slots.UTC) - pad
+        window_end = dt.datetime.combine(end + dt.timedelta(days=1), dt.time.min, tz).astimezone(slots.UTC) + pad
+    except OverflowError:
+        raise Problem(TOO_FAR) from None
     busy: list[slots.Busy] = []
     notes: list[str] = []
     events_read = 0
-    for name, events in sources.load(calendars, tz, reader=reader):
+    for name, events in sources.load(calendars, tz, reader=reader, notes=notes):
         events_read += len(events)
+        rules: list[str] = []
         busy += slots.busy_blocks(events, window_start, window_end, me=cfg.me, all_day_busy=all_day_busy,
-                                  calendar=name, warnings=notes)
+                                  calendar=name, warnings=rules)
+        notes += sources.named(name, rules)
     busy.sort(key=lambda b: (b.start, b.end))
     return busy, notes, events_read
 
 
 def _busy(plan: _Plan, cfg: settings.Config, reader) -> tuple[list[slots.Busy], list[str], int]:
-    return _load_busy(plan.calendars, plan.tz, min(plan.days), max(plan.days), cfg, plan.all_day_busy, reader)
+    return _load_busy(plan.calendars, plan.tz, min(plan.days), max(plan.days), cfg, plan.all_day_busy, reader,
+                      plan.buffer_minutes)
 
 
-def _day(d: dt.date, plan: _Plan, busy: list[slots.Busy]) -> dict:
+def _day(d: dt.date, plan: _Plan, busy: slots.Timeline) -> dict:
     clock = lambda t: t.astimezone(plan.tz).strftime("%H:%M")
     free = slots.free_slots(d, plan.opens, plan.closes, busy, plan.tz, buffer_minutes=plan.buffer_minutes,
                             min_minutes=plan.min_minutes, now=plan.now if d == plan.now.date() else None)
-    day_start = dt.datetime.combine(d, dt.time.min, plan.tz)
-    blocking = [b for b in busy if b.start < day_start + dt.timedelta(days=1) and b.end > day_start]
+    blocking = busy.overlapping(dt.datetime.combine(d, dt.time.min, plan.tz),
+                                dt.datetime.combine(d + dt.timedelta(days=1), dt.time.min, plan.tz))
     return {
         "date": d.isoformat(), "label": label(d),
         "free": [[clock(a), clock(b)] for a, b in free],
@@ -237,13 +283,18 @@ def find_free(q: Query, *, reader: sources.Reader | None = None) -> dict:
     cfg = _settings(q.config_path)
     plan = _plan(q, cfg)
     busy, notes, events_read = _busy(plan, cfg, reader)
+    timeline = slots.Timeline(busy)                       # one index for all the days, not one scan for each
+    try:
+        days = [_day(d, plan, timeline) for d in plan.days]
+    except OverflowError:
+        raise Problem(TOO_FAR) from None
     return {
         "timezone": plan.tz.key, "hours": [plan.opens.strftime("%H:%M"), plan.closes.strftime("%H:%M")],
         "min_minutes": plan.min_minutes, "buffer_minutes": plan.buffer_minutes,
-        "days": [_day(d, plan, busy) for d in plan.days],
+        "days": days,
         "read_by": plan.read_by,                          # how the days were read from a message, or None
         "past": [d.isoformat() for d in plan.past],       # asked for, but already gone
-        "notes": notes,
+        "notes": plan.notes + notes,
         "events_read": events_read, "calendars": len(plan.calendars), "blocking": len(busy),
     }
 
@@ -261,7 +312,7 @@ def status(config_path: str | None = None, calendars: list[str] | None = None, t
     if minutes < 1:
         raise Problem("min_minutes must be at least 1")
     busy, notes, _ = _load_busy(_calendars(calendars, cfg), tz, now.date(), now.date() + dt.timedelta(days=14),
-                                cfg, cfg.all_day_busy, reader)
+                                cfg, cfg.all_day_busy, reader, cfg.buffer_minutes)
     result = standing.status(busy, now, tz, opens, closes, buffer_minutes=cfg.buffer_minutes, min_minutes=minutes,
                              weekends=cfg.weekends)
     return {"timezone": tz.key, "min_minutes": minutes, **result, "notes": notes}
@@ -281,8 +332,10 @@ def check_calendars(config_path: str | None = None, calendars: list[str] | None 
     tz = _timezone(timezone, cfg)
     cals = _calendars(calendars, cfg)
     now = settings.now(tz)
-    found = [_found(name, events, cfg, now) for name, events in sources.load(cals, tz, reader=reader)]
-    return {"settings": str(cfg.path) if cfg.path and cfg.path.exists() else None, "timezone": tz.key, "calendars": found}
+    notes: list[str] = []
+    found = [_found(name, events, cfg, now) for name, events in sources.load(cals, tz, reader=reader, notes=notes)]
+    return {"settings": str(cfg.path) if cfg.path and cfg.path.exists() else None, "timezone": tz.key,
+            "calendars": found, "notes": notes}         # events that could not be read, by calendar
 
 
 def add_calendar(source: str, name: str | None = None, config_path: str | None = None) -> dict:
@@ -292,9 +345,11 @@ def add_calendar(source: str, name: str | None = None, config_path: str | None =
     """
     cfg = _settings(config_path)
     tz = _timezone(None, cfg)
-    (_, events), = sources.load([settings.Calendar(name or "new", source)], tz, consequence="Nothing was saved.")
+    notes: list[str] = []
+    (_, events), = sources.load([settings.Calendar(name or "new", source)], tz, consequence="Nothing was saved.",
+                                notes=notes)
     try:
         path, name = settings.add_calendar(source, name, cfg.path)
     except settings.ConfigError as e:
         raise Problem(str(e)) from None
-    return {"settings": str(path), **_found(name, events, cfg, settings.now(tz))}
+    return {"settings": str(path), **_found(name, events, cfg, settings.now(tz)), "notes": notes}

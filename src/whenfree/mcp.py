@@ -7,6 +7,7 @@ is ever written to standard output; anything for a person goes to standard error
 """
 from __future__ import annotations
 
+import io
 import json
 import sys
 
@@ -59,7 +60,7 @@ def _tools_call(params: dict, config_path: str | None) -> dict:
         text, data = tools.call(name, arguments, config_path=config_path)
     except Problem as e:
         # A tool that could not do its job is a result the model can read and act on, not a protocol error.
-        return {"content": [{"type": "text", "text": str(e)}], "isError": True}
+        return {"content": [{"type": "text", "text": tools.short(str(e))}], "isError": True}
     except Exception as e:                            # never take the server down, never leak a traceback
         return {"content": [{"type": "text", "text": f"when-free failed: {e.__class__.__name__}"}], "isError": True}
     return {"content": [{"type": "text", "text": text}], "structuredContent": data, "isError": False}
@@ -80,25 +81,55 @@ def handle(message, config_path: str | None = None) -> dict | None:
     if "id" not in message:
         return None                                   # notifications/initialized, notifications/cancelled, ...
     method, id_ = message["method"], message["id"]
+    if not (id_ is None or isinstance(id_, (str, int, float))) or isinstance(id_, bool):
+        return _error(None, -32600, "the id must be a string or a number")
+    if not isinstance(method, str):
+        return _error(id_, -32600, "the method must be a string")
     answer = METHODS.get(method)
     if answer is None:
-        return _error(id_, -32601, f"method not found: {method}")
-    return _result(id_, answer(message.get("params") or {}, config_path))
+        return _error(id_, -32601, f"method not found: {method[:80]}")
+    params = message.get("params") or {}
+    if not isinstance(params, dict):
+        return _error(id_, -32602, "params must be an object")
+    if method == "tools/call" and not isinstance(params.get("name"), str):
+        return _error(id_, -32602, "params.name must be the name of a tool")
+    return _result(id_, answer(params, config_path))
+
+
+def _answer(line: str, config_path: str | None) -> dict | None:
+    """The answer to one line. Whatever the line holds, this gives an answer or None; it does not raise."""
+    try:
+        message = json.loads(line)
+    except RecursionError:                            # brackets nested thousands deep
+        return _error(None, -32600, "the request is nested too deep to read")
+    except ValueError:
+        return _error(None, -32700, "parse error")
+    try:
+        return handle(message, config_path)
+    except Exception as e:                            # one bad message must not end the session
+        id_ = message.get("id") if isinstance(message, dict) else None
+        return _error(id_ if isinstance(id_, (str, int, float)) else None, -32603,
+                      f"when-free failed: {e.__class__.__name__}")
 
 
 def serve(stdin=None, stdout=None, config_path: str | None = None) -> int:
-    stdin, stdout = stdin or sys.stdin, stdout or sys.stdout
+    """Answer until standard input closes. A message it cannot read gets an error back; the server stays up."""
+    if stdin is None:                                 # bytes that are not UTF-8 become a parse error, not a crash
+        stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8", errors="replace")
+    stdout = stdout or sys.stdout
     for line in stdin:
         line = line.strip()
         if not line:
             continue
+        answer = _answer(line, config_path)
+        if answer is None:
+            continue
         try:
-            message = json.loads(line)
-        except json.JSONDecodeError:
-            answer = _error(None, -32700, "parse error")
-        else:
-            answer = handle(message, config_path)
-        if answer is not None:
-            stdout.write(json.dumps(answer, ensure_ascii=False) + "\n")
+            try:
+                stdout.write(json.dumps(answer, ensure_ascii=False) + "\n")
+            except UnicodeEncodeError:                # half a surrogate pair, echoed from the request
+                stdout.write(json.dumps(answer) + "\n")
             stdout.flush()
+        except BrokenPipeError:                       # the client went away
+            return 0
     return 0
