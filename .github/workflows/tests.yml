@@ -29,3 +29,29 @@ jobs:
             uvx --from dist/*.whl whenfree --calendar tests/data/sample.ics --days "Wed 7 Oct" --hours 10:00-16:00
           printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}' '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
             | uvx --from dist/*.whl whenfree mcp | grep -q '"free_slots"'
+
+  npm-launcher:                  # packaging/npm: what `npx when-free` runs
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+        node: ["18", "24"]
+    defaults:
+      run:
+        shell: bash
+        working-directory: packaging/npm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+      - name: Launcher tests (stand-ins for uvx and pipx, no network)
+        run: npm test
+      - name: The npm version is the version in pyproject.toml
+        run: node scripts/sync-version.js --check
+      - name: The package holds the launcher and nothing else
+        run: |
+          npm pack --dry-run --json | jq -e '[.[0].files[].path] | sort == ["LICENSE", "README.md", "bin/when-free.js", "package.json"]'
+          jq -e '(.scripts | has("postinstall") or has("install") or has("preinstall") | not) and (has("dependencies") | not)' package.json

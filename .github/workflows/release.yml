@@ -3,9 +3,17 @@ name: release
 # When a GitHub Release is published:
 #   1. PyPI gets the package, with trusted publishing (OIDC): no API token is stored anywhere.
 #   2. The release gets when-free.mcpb, the Claude Desktop extension.
-#   3. The MCP registry gets server.json, also with OIDC.
+#   3. npm gets the launcher in packaging/npm (`npx -y when-free mcp`), once PyPI serves the new
+#      version, also with trusted publishing (OIDC).
+#   4. The MCP registry gets server.json, also with OIDC.
 # One-time setup on pypi.org by the owner: add a pending publisher for project when-free,
 # repository YauhenBichel/when-free, workflow release.yml, environment pypi.
+# One-time setup on npmjs.com by the owner. npm has no pending publishers: the package must exist
+# before a trusted publisher can be added, so the first version is published by hand
+# (packaging/npm: `npm publish --access public --provenance=false`). Then, in the package's
+# Settings, Trusted Publisher, GitHub Actions: user YauhenBichel, repository when-free, workflow
+# release.yml, environment npm, and allow `npm publish`. A new trusted publisher expires unless it
+# publishes within 2 days, so add it shortly before a release.
 on:
   release:
     types: [published]
@@ -67,8 +75,73 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" dist/when-free.mcpb --clobber
 
+  npm:
+    needs: pypi                    # the launcher starts `uvx when-free==<version>`, so PyPI goes first
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: npm
+      url: https://www.npmjs.com/package/when-free
+    permissions:
+      id-token: write              # npm trusted publishing: no token is stored anywhere
+      contents: read
+    defaults:
+      run:
+        working-directory: packaging/npm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24         # trusted publishing needs Node 22.14 or later and npm 11.5.1 or later
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: npm is new enough for trusted publishing
+        run: |
+          have=$(npm --version)
+          test "$(printf '%s\n' 11.5.1 "$have" | sort -V | head -n 1)" = 11.5.1 || { echo "::error::npm $have is older than 11.5.1, which trusted publishing needs"; exit 1; }
+      - name: The npm version is the version in pyproject.toml
+        run: |
+          node scripts/sync-version.js
+          version=$(node -p 'require("./package.json").version')
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "::error::tag $GITHUB_REF_NAME, npm package $version"; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - name: Wait until PyPI serves this version
+        run: |
+          # Up to 5 minutes. Without this, npx when-free could point at a version uvx cannot find yet.
+          for attempt in $(seq 1 30); do
+            if curl -fsS "https://pypi.org/pypi/when-free/$VERSION/json" | jq -e '[.urls[] | select(.packagetype == "bdist_wheel" and (.yanked | not))] | length > 0' > /dev/null; then
+              echo "PyPI has when-free $VERSION (attempt $attempt)"; exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::PyPI does not serve when-free $VERSION after 5 minutes; nothing was published to npm"; exit 1
+      - name: The launcher starts this version from PyPI
+        run: |
+          # The same thing `npx when-free` will do: uvx when-free==$VERSION. The index uv reads can
+          # lag behind the JSON above by a few seconds, so this is tried for up to 2 minutes.
+          for attempt in $(seq 1 12); do
+            if node bin/when-free.js --help > /dev/null; then echo "uvx when-free==$VERSION runs (attempt $attempt)"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::uvx when-free==$VERSION does not run; nothing was published to npm"; exit 1
+        env:
+          UV_NO_CACHE: "1"
+      - name: Publish to npm
+        run: |
+          if curl -fsS -o /dev/null "https://registry.npmjs.org/when-free/$VERSION"; then    # a re-run after a later job failed
+            echo "when-free $VERSION is already on npm; nothing to do"; exit 0
+          fi
+          if npm publish 2> >(tee "$RUNNER_TEMP/npm-publish.log" >&2); then exit 0; fi
+          if grep -Eq 'ENEEDAUTH|E401|E403|E404|OIDC|[Uu]nable to authenticate' "$RUNNER_TEMP/npm-publish.log"; then
+            echo "::error::npm did not accept this workflow as a trusted publisher of when-free. On npmjs.com, package when-free, Settings, Trusted Publisher, check: GitHub Actions, user YauhenBichel, repository when-free, workflow release.yml, environment npm, npm publish allowed. A trusted publisher that did not publish within 2 days of being added has expired and must be added again. If the package does not exist on npm yet, the first version has to be published by hand: see the top of release.yml. Then re-run this job."
+          else
+            echo "::error::npm publish failed; see the log above"
+          fi
+          exit 1
+
   registry:
-    needs: pypi                    # the registry checks that the PyPI package exists
+    needs: [pypi, npm]             # the registry checks that the PyPI and npm packages exist
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:

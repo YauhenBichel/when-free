@@ -14,7 +14,8 @@ def test_one_version_everywhere():
     assert tomllib.loads((ROOT / "packaging/mcpb/pyproject.toml").read_text())["project"]["version"] == v
     assert json.loads((ROOT / "packaging/mcpb/manifest.json").read_text())["version"] == v
     server = json.loads((ROOT / "server.json").read_text())
-    assert server["version"] == v and [p["version"] for p in server["packages"]] == [v]
+    assert server["version"] == v and [p["version"] for p in server["packages"]] == [v, v]
+    assert json.loads((ROOT / "packaging/npm/package.json").read_text())["version"] == v
     assert json.loads((ROOT / ".claude-plugin/plugin.json").read_text())["version"] == v
     marketplace = json.loads((ROOT / ".claude-plugin/marketplace.json").read_text())
     assert [p["version"] for p in marketplace["plugins"]] == [v]
@@ -24,6 +25,22 @@ def test_the_registry_can_verify_the_pypi_package():
     # The MCP registry looks for this line in the README that PyPI shows.
     name = json.loads((ROOT / "server.json").read_text())["name"]
     assert f"mcp-name: {name}" in (ROOT / "README.md").read_text()
+
+
+def test_the_npm_package_is_a_launcher_for_this_project():
+    # npx when-free starts `uvx when-free==<npm version>`, so the npm package carries the same
+    # version (checked above), the same licence, and the names the registries verify.
+    package = json.loads((ROOT / "packaging/npm/package.json").read_text())
+    server = json.loads((ROOT / "server.json").read_text())
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    assert package["name"] == project["name"] and package["license"] == project["license"]
+    assert set(package["bin"]) == set(project["scripts"])
+    assert package["mcpName"] == server["name"]          # the MCP registry looks for this on npm
+    # npm trusted publishing refuses a package whose repository is not the one that publishes it.
+    assert package["repository"]["url"] == "git+" + server["repository"]["url"] + ".git"
+    assert [(p["registryType"], p["identifier"]) for p in server["packages"]] == [("pypi", "when-free"), ("npm", "when-free")]
+    assert "postinstall" not in package.get("scripts", {}) and "dependencies" not in package
+    assert (ROOT / "packaging/npm/LICENSE").read_bytes() == (ROOT / "LICENSE").read_bytes()
 
 
 def test_the_extension_offers_the_same_tools():
