@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `npx -y when-free mcp`: an npm package of the same name and version, for MCP clients that start servers with `npx`. It is a launcher that runs `uvx when-free==<version>`, so `uv` (or pipx) must be installed. Published with each release from now on.
 
 - README: how to connect from Grok Build and other MCP clients, and a note for models without MCP support.
 

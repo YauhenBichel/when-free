@@ -39,6 +39,36 @@
           "isSecret": false
         }
       ]
+    },
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "when-free",
+      "version": "0.5.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "WHENFREE_CALENDARS",
+          "description": "Private iCal addresses of your calendars, comma-separated. Optional if you saved them with `whenfree add`.",
+          "isRequired": false,
+          "isSecret": true
+        },
+        {
+          "name": "WHENFREE_TZ",
+          "description": "Time zone for answers, like Europe/London. Default: the computer's.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
     }
   ]
 }

@@ -202,6 +202,8 @@ For Cursor and other MCP clients, add this to their server list. `uvx` fetches w
 }
 ```
 
+For a client that expects `npx` (available from the next release): `"command": "npx", "args": ["-y", "when-free", "mcp"]`. The npm package is only a launcher: it starts this same version with `uvx`, so `uv` (or pipx) must be installed.
+
 If you installed it with `uv tool install`, use `"command": "whenfree", "args": ["mcp"]` instead. It's also listed in the [MCP registry](https://registry.modelcontextprotocol.io) as `io.github.YauhenBichel/when-free`, on [mcprush](https://mcprush.com/yauhenbichel/when-free-mcp) and in the [M8ven Trust Index](https://m8ven.ai/mcp/yauhenbichel/when-free).
 
 Grok Build (xAI) reads `~/.grok/config.toml`, or `.grok/config.toml` in a project:

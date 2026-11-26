@@ -1,0 +1,31 @@
+{
+  "name": "when-free",
+  "version": "0.5.0",
+  "description": "Which days and times am I free? Launcher for the when-free Python tool and MCP server: runs `uvx when-free` at this same version.",
+  "mcpName": "io.github.YauhenBichel/when-free",
+  "license": "Apache-2.0",
+  "author": "Yauhen Bichel",
+  "homepage": "https://github.com/YauhenBichel/when-free#readme",
+  "bugs": "https://github.com/YauhenBichel/when-free/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YauhenBichel/when-free.git",
+    "directory": "packaging/npm"
+  },
+  "keywords": ["calendar", "availability", "free-busy", "scheduling", "mcp", "mcp-server", "ai-agents"],
+  "bin": {
+    "when-free": "bin/when-free.js",
+    "whenfree": "bin/when-free.js"
+  },
+  "files": ["bin/when-free.js"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
