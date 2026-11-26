@@ -77,18 +77,20 @@ if (!preload || ['uvx', 'uv', 'pipx'].includes(name)) {
 // A temp folder with stand-ins for the named tools; returns the folder.
 function fakeBin(t, names) {
   const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'when-free-test-')));
-  t.after(() => fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5 }));
+  t.after(() => {
+    try {
+      fs.rmSync(dir, { recursive: true, force: true, maxRetries: 5 });
+    } catch {
+      // Windows can keep a program file locked for a moment after it has ended; the folder is in the temp folder
+    }
+  });
   if (WINDOWS) {
     // Only a real .exe can be started without a shell, so the stand-in is Node itself under
     // another name, and the code above is loaded into it with NODE_OPTIONS.
     fs.writeFileSync(path.join(dir, 'stub.js'), STUB);
     for (const name of names) {
-      const exe = path.join(dir, name + '.exe');
-      try {
-        fs.linkSync(process.execPath, exe);
-      } catch {
-        fs.copyFileSync(process.execPath, exe);
-      }
+      // A copy, not a hard link: a link to the Node that runs these tests cannot be deleted while it runs.
+      fs.copyFileSync(process.execPath, path.join(dir, name + '.exe'));
     }
   } else {
     for (const name of names) {
