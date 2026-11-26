@@ -204,6 +204,22 @@ For Cursor and other MCP clients, add this to their server list. `uvx` fetches w
 
 If you installed it with `uv tool install`, use `"command": "whenfree", "args": ["mcp"]` instead. It's also listed in the [MCP registry](https://registry.modelcontextprotocol.io) as `io.github.YauhenBichel/when-free`, on [mcprush](https://mcprush.com/yauhenbichel/when-free-mcp) and in the [M8ven Trust Index](https://m8ven.ai/mcp/yauhenbichel/when-free).
 
+Grok Build (xAI) reads `~/.grok/config.toml`, or `.grok/config.toml` in a project:
+
+```toml
+[mcp_servers.when-free]
+command = "uvx"
+args = ["when-free", "mcp"]
+```
+
+or in one line: `grok mcp add when-free -- uvx when-free mcp`. Grok Build also reads `.mcp.json` and `.cursor/mcp.json`, so the JSON above works there too. Add `env = { WHENFREE_TZ = "Europe/London" }` to the TOML (or an `"env"` object to the JSON) only if you need a setting from the table below; leave `WHENFREE_CALENDARS` in the settings file rather than in a client configuration.
+
+This server holds your mail, calendar and chat sign-ins, and some of its tools post (`slack_post`, `teams_post`). Run it on your own computer, started by the client over stdio. Do not put it behind a public URL.
+
+Models without MCP support (for example Meta's Muse Spark, whose API offers function calling) can use these tools through an MCP-to-function-calling bridge; llm-harness provides one, see llm-harness's README. For your own harness, [function calling](#function-calling-harnesses) works without a bridge.
+
+Tested with Claude Code. The Grok Build block follows xAI's documentation and has not been run.
+
 Then just ask: *"Here's the recruiter's message. Which of those times can I do?"* The assistant calls `free_slots` and answers from your real calendar.
 
 | Tool | What it does |

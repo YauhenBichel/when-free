@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- README: how to connect from Grok Build and other MCP clients, and a note for models without MCP support.
+
 ## 0.5.0 (2026-11-22)
 
 Read the request where it arrived: mail, chat and work tools through the MCP server.
