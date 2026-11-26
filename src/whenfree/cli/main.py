@@ -72,6 +72,8 @@ def cmd_add(args) -> int:
     found = api.add_calendar(source, name=args.name, config_path=args.config)
     print(f"Added '{found['name']}': {found['events']} events, {found['blocking_next_14_days']} block time in the next 14 days.")
     print(f"Saved in {found['settings']}, readable only by you. Now run: whenfree")
+    for note in found["notes"]:
+        print(f"Note: {note}", file=sys.stderr)
     if os.environ.get("WHENFREE_CALENDARS"):
         print("note: WHENFREE_CALENDARS is set and replaces the calendars in the settings file.", file=sys.stderr)
     return 0

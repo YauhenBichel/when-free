@@ -100,3 +100,56 @@ def test_no_hours():
     assert dates.parse_hours("Good afternoon, are you free?") is None
     with pytest.raises(ValueError):
         dates.hours_from_string("whenever")
+
+
+# ---------- lists, ranges, years, and hours that look like days ----------
+
+NOV = dt.date(2026, 11, 26)       # a Thursday
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Monday 9-5", [D(11, 30)]),
+    ("Friday 2-4pm", [D(11, 27)]),
+    ("Friday 2pm", [D(11, 27)]),
+    ("Thursday 10 to 4", [D(11, 26)]),
+    ("Mon-Fri 9-5 next week", [D(11, 30), D(12, 1), D(12, 2), D(12, 3), D(12, 4)]),
+])
+def test_a_number_after_a_weekday_that_starts_an_hour_range_is_not_a_day_of_the_month(text, expected):
+    assert dates.parse_days(text, NOV) == expected
+
+
+@pytest.mark.parametrize("text, expected", [
+    ("Dec 2, 3, 4", [D(12, 2), D(12, 3), D(12, 4)]),
+    ("Dec 2nd, 3rd & 4th", [D(12, 2), D(12, 3), D(12, 4)]),
+    ("Dec 2-4", [D(12, 2), D(12, 3), D(12, 4)]),
+    ("December 2 through 4, 10:00-16:00", [D(12, 2), D(12, 3), D(12, 4)]),
+    ("2 and 3 December", [D(12, 2), D(12, 3)]),
+    ("2nd to 4th of December", [D(12, 2), D(12, 3), D(12, 4)]),
+    ("Oct 1, 5 Nov", [D(10, 1), D(11, 5)]),                        # the 1 belongs to October
+    ("Dec 2, 2-4pm", [D(12, 2)]),                                  # hours, not the 2nd to the 4th
+    ("Dec 2, 3 at 10:30", [D(12, 2), D(12, 3)]),
+])
+def test_several_days_of_one_month(text, expected):
+    assert dates.parse_days(text, NOV) == expected
+
+
+def test_a_year_that_is_written_is_the_year_meant():
+    assert dates.parse_days("14 Jan 2025", NOV) == [dt.date(2025, 1, 14)]
+    assert dates.parse_days("Jan 14, 2025", NOV) == [dt.date(2025, 1, 14)]
+    assert dates.parse_days("14 Jan", NOV) == [dt.date(2027, 1, 14)]
+
+
+def test_last_friday_is_the_one_that_has_gone():
+    assert dates.parse_days("last Friday", NOV) == [D(11, 20)]
+    assert dates.parse_days("last Thursday", NOV) == [D(11, 19)]    # not today
+
+
+@pytest.mark.parametrize("text, days, unread", [
+    ("5 Dec, 7", [D(12, 5)], ["7"]),
+    ("Dec 2 or 3/12", [D(12, 2)], ["3/12"]),
+    ("Tuesday 1st and the 3rd", [D(12, 1)], ["3rd"]),
+    ("Dec 2, 3 and 4", [D(12, 2), D(12, 3), D(12, 4)], []),
+    ("Thu 1 Oct, Fri 2 Oct, 10:00-16:00", [D(10, 1), D(10, 2)], []),
+])
+def test_what_looks_like_a_date_and_was_not_read_is_reported(text, days, unread):
+    assert dates.read_days(text, NOV) == (days, unread)

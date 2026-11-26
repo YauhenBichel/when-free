@@ -64,7 +64,7 @@ def draft(arguments: dict, config_path: str | None):
 
 
 TOOLS = [
-    (schema.tool("outlook_search", "Search the user's Outlook mail. Does not send mail.", {"query": schema.string("Words to search for."), "max": schema.integer("How many to return. Default 8, at most 20.")}), search),
-    (schema.tool("outlook_read", "Read one Outlook message by the id outlook_search returned. Does not send mail.", {"id": schema.string("The message id.")}), read),
-    (schema.tool("outlook_draft", "Save an Outlook draft. It does not send the message.", {"to": schema.string("Recipient address."), "subject": schema.string("Subject."), "body": schema.string("Plain text body.")}), draft),
+    (schema.tool("outlook_search", "Search the user's Outlook mail. Does not send mail.", {"query": schema.string("Words to search for."), "max": schema.integer("How many to return. Default 8, at most 20.")}, ("query",)), search),
+    (schema.tool("outlook_read", "Read one Outlook message by the id outlook_search returned. Does not send mail.", {"id": schema.string("The message id.")}, ("id",)), read),
+    (schema.tool("outlook_draft", "Save an Outlook draft. It does not send the message.", {"to": schema.string("Recipient address."), "subject": schema.string("Subject."), "body": schema.string("Plain text body.")}, ("to", "subject", "body")), draft),
 ]

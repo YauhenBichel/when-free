@@ -115,9 +115,9 @@ def draft(arguments: dict, config_path: str | None):
 
 
 TOOLS = [
-    (schema.tool("gmail_search", "Search the user's Gmail. Returns ids, senders and subjects, not the full body. Use gmail_read for one message. Does not send mail.", {"query": schema.string("Gmail search, such as \"from:me@example.com newer_than:7d\"."), "max": schema.integer("How many to return. Default 8, at most 20.")}), search),
-    (schema.tool("gmail_read", "Read one Gmail message by the id gmail_search returned. Does not send or change mail.", {"id": schema.string("The message id.")}), read),
-    (schema.tool("gmail_thread", "Read one Gmail thread by id. Does not send or change mail.", {"id": schema.string("The thread id.")}), thread),
+    (schema.tool("gmail_search", "Search the user's Gmail. Returns ids, senders and subjects, not the full body. Use gmail_read for one message. Does not send mail.", {"query": schema.string("Gmail search, such as \"from:me@example.com newer_than:7d\"."), "max": schema.integer("How many to return. Default 8, at most 20.")}, ("query",)), search),
+    (schema.tool("gmail_read", "Read one Gmail message by the id gmail_search returned. Does not send or change mail.", {"id": schema.string("The message id.")}, ("id",)), read),
+    (schema.tool("gmail_thread", "Read one Gmail thread by id. Does not send or change mail.", {"id": schema.string("The thread id.")}, ("id",)), thread),
     (schema.tool("gmail_labels", "List Gmail labels. Does not change them.", {}), labels),
-    (schema.tool("gmail_draft", "Save a Gmail draft. It does not send the message.", {"to": schema.string("Recipient address."), "subject": schema.string("Subject."), "body": schema.string("Plain text body.")}), draft),
+    (schema.tool("gmail_draft", "Save a Gmail draft. It does not send the message.", {"to": schema.string("Recipient address."), "subject": schema.string("Subject."), "body": schema.string("Plain text body.")}, ("to", "subject", "body")), draft),
 ]

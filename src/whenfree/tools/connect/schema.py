@@ -10,9 +10,10 @@ def integer(description: str, minimum: int = 1) -> dict:
     return {"type": "integer", "minimum": minimum, "description": description}
 
 
-def tool(name: str, description: str, properties: dict) -> dict:
-    return {
-        "name": name,
-        "description": description,
-        "inputSchema": {"type": "object", "properties": properties, "additionalProperties": False},
-    }
+def tool(name: str, description: str, properties: dict, required: tuple[str, ...] = ()) -> dict:
+    """`required` names the arguments the tool cannot work without, so a model sees them before it calls."""
+    schema = {"type": "object", "properties": properties, "additionalProperties": False}
+    if required:
+        assert set(required) <= set(properties), f"{name}: required names an unknown argument"
+        schema["required"] = list(required)
+    return {"name": name, "description": description, "inputSchema": schema}

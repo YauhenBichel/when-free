@@ -55,6 +55,6 @@ def read(arguments: dict, config_path: str | None):
 
 
 TOOLS = [
-    (schema.tool("drive_search", "Search the user's Google Drive by file name. Read only.", {"query": schema.string("Words from the file name."), "max": schema.integer("How many to return. Default 8, at most 20.")}), search),
-    (schema.tool("drive_read", "Read one Drive file as text, by the id drive_search returned. Read only.", {"id": schema.string("The file id.")}), read),
+    (schema.tool("drive_search", "Search the user's Google Drive by file name. Read only.", {"query": schema.string("Words from the file name."), "max": schema.integer("How many to return. Default 8, at most 20.")}, ("query",)), search),
+    (schema.tool("drive_read", "Read one Drive file as text, by the id drive_search returned. Read only.", {"id": schema.string("The file id.")}, ("id",)), read),
 ]

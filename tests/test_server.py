@@ -139,3 +139,54 @@ def test_on_another_address_the_token_alone_protects_it(tmp_path, monkeypatch):
     finally:
         srv.shutdown()
         srv.server_close()
+
+
+# ---------- requests that are wrong, and many at once ----------
+
+def raw_request(url, head: str, body: bytes = b"") -> bytes:
+    import socket
+    host, port = url.split("//")[1].split(":")
+    with socket.create_connection((host, int(port)), timeout=5) as s:
+        s.sendall(head.replace("\n", "\r\n").encode() + body)
+        return s.recv(4096)
+
+
+@pytest.mark.parametrize("length", ["-1", "abc", "-999999", "1e3"])
+def test_a_content_length_that_is_not_a_count_is_a_400_not_a_wait(url, length):
+    answer = raw_request(url, f"POST /free_slots HTTP/1.1\nHost: 127.0.0.1\nAuthorization: Bearer {TOKEN}\n"
+                              f"Content-Length: {length}\n\n", b"{}")
+    assert answer.startswith(b"HTTP/1.0 400") or answer.startswith(b"HTTP/1.1 400")
+    assert b"Content-Length" in answer
+
+
+def test_an_error_does_not_send_the_request_back_whole(url):
+    status, body, _ = ask(url, "/free_slots", {"days": "A" * 50_000})
+    assert status == 400 and len(body["error"]) < 400
+    status, body, _ = ask(url, "/free_slots", {"hours": "B" * 50_000, "days": "2026-10-07"})
+    assert status == 400 and len(body["error"]) < 400
+
+
+def test_a_body_nested_too_deep_is_a_400(url):
+    req = urllib.request.Request(url + "/free_slots", data=b"[" * 60_000, method="POST",
+                                 headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"})
+    with pytest.raises(urllib.error.HTTPError) as e:
+        urllib.request.urlopen(req)
+    assert e.value.code == 400
+
+
+def test_fifty_callers_at_once_are_all_answered(url):
+    assert server.Server.request_queue_size >= 100                   # the default of 5 refuses a burst
+    results = []
+
+    def one():
+        try:
+            results.append(ask(url, "/free_slots", {"days": "2026-10-07"})[0])
+        except Exception as e:                                       # a refused or reset connection
+            results.append(e.__class__.__name__)
+
+    callers = [threading.Thread(target=one) for _ in range(50)]
+    for t in callers:
+        t.start()
+    for t in callers:
+        t.join(30)
+    assert results == [200] * 50

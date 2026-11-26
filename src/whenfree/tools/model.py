@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from ..core.errors import Problem
+from ..core.errors import Problem, clip
 
 _TYPES = {"string": str, "integer": int, "boolean": bool}
 
@@ -34,7 +34,7 @@ class Tool:
             raise Problem("arguments must be an object")
         for key, value in arguments.items():
             if key not in self.properties:
-                raise Problem(f"unknown argument {key!r} for {self.name}. Known: {', '.join(self.properties) or 'none'}")
+                raise Problem(f"unknown argument {clip(key, 40)} for {self.name}. Known: {', '.join(self.properties) or 'none'}")
             kind = _TYPES[self.properties[key]["type"]]
             if not isinstance(value, kind) or (kind is int and isinstance(value, bool)):
                 raise Problem(f"argument {key!r} should be {self.properties[key]['type']}")
