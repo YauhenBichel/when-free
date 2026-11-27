@@ -7,7 +7,7 @@ license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Yauhen Bichel" }]
 requires-python = ">=3.11"
-keywords = ["calendar", "icalendar", "ics", "availability", "free-busy", "scheduling", "interview", "google-calendar", "cli", "mcp", "mcp-server", "ai-agents"]
+keywords = ["calendar", "icalendar", "ics", "availability", "free-busy", "scheduling", "interview", "google-calendar", "cli", "mcp", "mcp-server", "ai-agents", "find-free-time", "meeting-scheduler", "outlook", "icloud", "claude", "model-context-protocol"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
@@ -25,6 +25,9 @@ when-free = "whenfree.cli:main"      # so that `uvx when-free mcp` works without
 [project.urls]
 Homepage = "https://github.com/YauhenBichel/when-free"
 Issues = "https://github.com/YauhenBichel/when-free/issues"
+Source = "https://github.com/YauhenBichel/when-free"
+Changelog = "https://github.com/YauhenBichel/when-free/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/YauhenBichel/when-free#readme"
 
 [dependency-groups]
 dev = ["pytest>=8"]
