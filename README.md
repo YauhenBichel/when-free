@@ -1,5 +1,7 @@
 # when-free
 
+when-free is a command-line tool and MCP server that reads your calendars (Google, Outlook, iCloud or any `.ics` file) and a scheduling message, and lists the free time slots you can offer back.
+
 **Someone asks when you're free. This reads your calendar and gives you the answer, ready to paste.**
 
 [![tests](https://github.com/YauhenBichel/when-free/actions/workflows/tests.yml/badge.svg)](https://github.com/YauhenBichel/when-free/actions/workflows/tests.yml)
@@ -12,13 +14,13 @@
 
 - **Paste the message, get the slots.** It reads "Tuesday or Wednesday next week, between 10am and 4pm" and answers for exactly those days and hours.
 - **Works with Google, Outlook and iCloud** calendars, or any `.ics` file. Several calendars at once.
-- **Private.** It runs on your computer, needs no account and no API key, and never changes your calendar.
+- **Private.** It runs on your computer, needs no account and no API key, and never changes your calendar. Mail and chat tools exist, but only in the MCP server and only for services you sign in to yourself.
 - **Works from your AI tools too:** Claude, Cursor and other MCP clients, Open WebUI, n8n, Shortcuts, scripts.
 - **And on your other devices:** phones, tablets and watches, Home Assistant (and Alexa, Google Home, Siri through it), and the menu bar or status bar of macOS, Linux and Windows.
 
 ## Contents
 
-[Try it](#try-it-in-a-minute) · [Add your calendar](#add-your-calendar) · [Everyday use](#everyday-use) · [Reading a message](#reading-a-message) · [Use it from other tools](#use-it-from-other-tools) · [Other devices](#on-your-other-devices) · [Privacy](#privacy) · [Settings](#settings) · [What counts as busy](#what-counts-as-busy) · [Limits](#limits) · [Problems](#if-something-does-not-work) · [Where it is listed](#where-it-is-listed)
+[Try it](#try-it-in-a-minute) · [Add your calendar](#add-your-calendar) · [Everyday use](#everyday-use) · [Reading a message](#reading-a-message) · [Use it from other tools](#use-it-from-other-tools) · [Other devices](#on-your-other-devices) · [Privacy](#privacy) · [Settings](#settings) · [What counts as busy](#what-counts-as-busy) · [Limits](#limits) · [Problems](#if-something-does-not-work) · [FAQ](#faq) · [Where it is listed](#where-it-is-listed)
 
 ## Try it in a minute
 
@@ -143,7 +145,7 @@ It always tells you how it read the dates, so you can check them against the mes
 - **Days already past are left out** and named, never dropped silently. "Wednesday 30th" means the nearest Wednesday that's a 30th, so a message from last week reads as last week.
 - **Words count from today.** For an older message that says "tomorrow", give the days yourself with `--days`.
 
-when-free never connects to your mailbox. You paste the message, pipe it in, or save it to a file.
+The `whenfree` command never connects to your mailbox: you paste the message, pipe it in, or save it to a file. Through the MCP server, an assistant can instead fetch the message from Gmail, Outlook, Slack or Teams, but only after you ran `whenfree connect` for that service.
 
 <details>
 <summary><b>Let your own language model read the message</b></summary>
@@ -161,7 +163,7 @@ The command receives the message and must print JSON: `{"days": ["2026-10-05"], 
 
 ## Use it from other tools
 
-Every way gives the same answer, only reads, and leaves event titles out unless asked.
+Every way gives the same free-time answer, and leaves event titles out unless asked. No tool writes to a calendar.
 
 | Your tool | Use | Set up |
 |---|---|---|
@@ -224,10 +226,28 @@ Tested with Claude Code. The Grok Build block follows xAI's documentation and ha
 
 Then just ask: *"Here's the recruiter's message. Which of those times can I do?"* The assistant calls `free_slots` and answers from your real calendar.
 
-| Tool | What it does |
-|---|---|
-| `free_slots` | Free time per day. Takes `days`, or `from` and `to`, or a `message`, plus `hours`, `min_minutes`, `buffer_minutes`, `timezone`, `weekends`, `all_day_busy`, `include_busy` |
-| `check_calendars` | Whether each calendar can be read, with event counts. No details, no addresses |
+Calendar tools work with no sign-in. The mail, chat and work tools appear only for services you signed in with `whenfree connect <service>` (Google, Microsoft, Slack, GitHub, Notion, Linear, HubSpot); tokens stay on your computer. `whenfree schema` prints the full list with arguments.
+
+| Tool | What it does | Read-only |
+|---|---|---|
+| `free_slots` | Free time per day. Takes `days`, or `from` and `to`, or a `message`, plus `hours`, `min_minutes`, `buffer_minutes`, `timezone`, `weekends`, `all_day_busy`, `include_busy` | yes |
+| `status` | Whether you are free now, until when, and your next free slot | yes |
+| `check_calendars` | Whether each calendar can be read, with event counts. No details, no addresses | yes |
+| `connected_accounts` | Which services are signed in. Names only, no tokens | yes |
+| `gmail_search`, `gmail_read`, `gmail_thread`, `gmail_labels` | Search and read Gmail | yes |
+| `gmail_draft` | Save a Gmail draft. It does not send it | no: creates a draft |
+| `outlook_search`, `outlook_read` | Search and read Outlook mail | yes |
+| `outlook_draft` | Save an Outlook draft. It does not send it | no: creates a draft |
+| `drive_search`, `drive_read` | Search and read Google Drive files | yes |
+| `slack_channels`, `slack_history` | List channels and read recent messages | yes |
+| `slack_post` | Post a message to a Slack channel | no: sends a message |
+| `teams_joined`, `teams_channels`, `teams_history` | List Teams and channels, read recent messages | yes |
+| `teams_post` | Post a message to a Teams channel | no: sends a message |
+| `github_repos`, `github_issues`, `github_issue` | List repositories and issues, read one issue | yes |
+| `github_comment` | Comment on an issue | no: posts a comment |
+| `notion_search`, `notion_read` | Search and read Notion pages | yes |
+| `linear_issues`, `linear_issue` | List and read Linear issues | yes |
+| `hubspot_contacts`, `hubspot_deals` | List or search HubSpot contacts and deals | yes |
 
 If a tool can't do its job, the assistant gets an error it can read ("could not read the calendar 'work'"), never a guess.
 
@@ -287,9 +307,9 @@ Devices see whether you're free and your free slots, never event titles. Each ph
 
 ## Privacy
 
-- **It runs on your computer.** It fetches your calendar feeds and nothing else. It never writes to a calendar and never sends a message.
+- **It runs on your computer.** The `whenfree` command fetches your calendar feeds and nothing else. It never writes to a calendar and never sends a message. The MCP server talks to a mail, chat or work service only after you signed in to it, and only five of its tools write: `gmail_draft` and `outlook_draft` (drafts, never sent), `slack_post`, `teams_post` and `github_comment` (these send).
 - **Your calendar address stays secret.** It's never printed, isn't shown while you paste it, and is stored in a file only you can read. Errors name the calendar ("personal"), never its address.
-- **Assistants see free time, not your events.** Event titles are left out unless the assistant asks with `include_busy`, and that option's description tells the model that titles are private. No tool can add, change or delete anything, and no tool takes a calendar address, which goes from you to `whenfree add` only.
+- **Assistants see free time, not your events.** Event titles are left out unless the assistant asks with `include_busy`, and that option's description tells the model that titles are private. No calendar tool can add, change or delete anything, and no tool takes a calendar address, which goes from you to `whenfree add` only.
 
 ## Settings
 
@@ -342,7 +362,7 @@ A slot shorter than `min_minutes` after the buffers isn't offered. For today, th
 
 ## Limits
 
-- **It reads; it doesn't book.** It never writes to a calendar and never sends a message.
+- **It reads; it doesn't book.** It never writes to a calendar. It sends nothing unless you sign in to Slack, Teams or GitHub and an assistant calls `slack_post`, `teams_post` or `github_comment`.
 - **It's as fresh as the feed.** Google refreshes the secret address with some delay, so an event added a minute ago may be missing. Run `whenfree --busy` to see what it saw.
 - **Every calendar or none.** If one calendar can't be read, no slots are shown, because busy time would look free.
 - **Repeating events.** Daily, weekly, monthly (by date, or "first Monday", "last Friday") and yearly rules are expanded, with intervals, end dates, counts, skipped dates and moved occurrences. Rarer rules (`BYSETPOS`, week numbers) aren't. For those the first date is blocked and a note says so.
@@ -360,6 +380,40 @@ A slot shorter than `min_minutes` after the buffers isn't offered. For today, th
 | An event you just added is missing | The feed refreshes with a delay. See [Limits](#limits) |
 | A meeting doesn't block time | Run `whenfree --busy` to see what was read. Declined invitations, events marked Free and whole-day events don't block; see [What counts as busy](#what-counts-as-busy) |
 | `whenfree check` | Says whether every calendar can be read, at any time |
+
+## When to use it, and when not
+
+Use it when you must answer "when are you free?" from your real calendar: interview and meeting requests, or an assistant that proposes times. Do not use it to book meetings, to share a live booking page (use a scheduling service for that), or to merge calendars into one that others can see. It lists time; it does not send invitations.
+
+## FAQ
+
+### How do I find my free time from a calendar link?
+
+Run `whenfree add`, paste the calendar's private `.ics` address, then run `whenfree`. Details are in [Add your calendar](#add-your-calendar).
+
+### How do I answer a recruiter's message with my free slots?
+
+Run `pbpaste | whenfree --message -` (Mac) or `whenfree --message invite.txt`. It reads the days and hours in the text and prints only those slots.
+
+### Does it send my calendar anywhere?
+
+No. It fetches your calendar feeds from the address you gave and computes the answer on your computer. It needs no account and no API key. Event titles are left out of what assistants see unless they ask for them. Only if you configure `[extract] command` does the message go to the command you chose.
+
+### Can Claude or Cursor use it?
+
+Yes. Run `claude mcp add when-free -- uvx when-free mcp` for Claude Code, or add the JSON in the [MCP section](#mcp-claude-cursor-and-other-assistants) to another client.
+
+### Does it work with Google Calendar, Outlook and iCloud?
+
+Yes, through each one's private `.ics` address, and with any exported `.ics` file. It does not use the Google or Microsoft calendar APIs.
+
+### How is it different from Calendly or a free/busy link?
+
+Those publish a booking page. when-free keeps your calendar private and gives you text to paste into a reply. It cannot book or invite anyone.
+
+### Why does it show no slots when one calendar is down?
+
+If any calendar cannot be read, busy time would look free, so it shows nothing and names the calendar. See [If something does not work](#if-something-does-not-work).
 
 ## Where it is listed
 
@@ -384,8 +438,8 @@ The tests use a small calendar in `tests/data/sample.ics` and a fixed clock (`WH
 | `settings/` | `config`: the settings file and environment variables | nothing |
 | `calendars/` | `sources`: calendars fetched from an address or read from a file | `core`, `settings` |
 | `api.py` | `find_free`, `status`, `check_calendars`: the one entry point for every front end | the four above |
-| `agents/` | `tools`, `mcp`: the tools offered to AI agents, and the MCP server | `api`, `core` |
-| `web/` | `server`: the HTTP front end, for tools and phones | `api`, `agents`, `devices`, `calendars`, `core`, `settings` |
+| `tools/`, `mcp.py` | The tools offered to AI agents (calendar, mail, chat, work services) and the MCP server | `api`, `core` |
+| `web/` | `server`: the HTTP front end, for tools and phones | `api`, `tools`, `devices`, `calendars`, `core`, `settings` |
 | `devices/` | `widgets`, `pairing`, `feed`, `qr`, `mobile/`: status bars, phone pairing, the calendar feed, the phone page | `api`, `core`, `settings` |
 | `smarthome/` | `mqtt`, `homeassistant`: MQTT publishing with Home Assistant discovery | `api`, `core` |
 | `cli/` | `main`, `demo`: the `whenfree` command | anything |
